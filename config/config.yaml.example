@@ -1,0 +1,56 @@
+# Ryobi GDO Local Server - Example Configuration
+#
+# Copy this to config.yaml and fill in your values.
+# All fields can also be set via environment variables (see README).
+
+# ---------------------------------------------------------------------------
+# Ryobi account credentials
+# Used for cloud polling (cloud_poll: true) and login enforcement.
+# Leave blank to accept any credentials from the HA integration.
+# ---------------------------------------------------------------------------
+username: "your_ryobi_email@example.com"
+password: "your_ryobi_password"
+
+# ---------------------------------------------------------------------------
+# Devices
+# Add one entry per garage door opener on your account.
+# device_id: the Ryobi "varName" (e.g. GDO_XXXXXXXXXX).
+#   Find it by checking your existing HA integration or the Ryobi app.
+# ---------------------------------------------------------------------------
+devices:
+  - device_id: "GDO_XXXXXXXXXX"
+    name: "Garage Door"
+    # Optional: specify which modules are present on this device.
+    # Keys are Ryobi module names, values are the "key_in_deviceTypeMap" strings.
+    # If omitted, sensible defaults are used (garageDoor_7, garageLight_7, etc.)
+    modules:
+      garageDoor: "garageDoor_7"
+      garageLight: "garageLight_7"
+      # backupCharger: "backupCharger_6"   # uncomment if you have a battery backup
+      # wifiModule: "wifiModule_7"
+      # parkAssistLaser: "parkAssistLaser_1"
+      # inflator: "inflator_4"
+      # btSpeaker: "btSpeaker_2"
+
+  # Uncomment to add a second door:
+  # - device_id: "GDO_YYYYYYYYYY"
+  #   name: "Garage Door 2"
+
+# ---------------------------------------------------------------------------
+# Cloud polling (optional but recommended)
+# When enabled, the server polls the real Ryobi cloud every `poll_interval`
+# seconds and mirrors the live device state locally. This means even if the
+# Ryobi app is flaky, the LOCAL server always has current state.
+#
+# Set to false if you want fully offline operation (state only changes via
+# the /state webhook or HA commands).
+# ---------------------------------------------------------------------------
+cloud_poll: true
+poll_interval: 30   # seconds
+
+# ---------------------------------------------------------------------------
+# Security
+# If enforce_token is true, WebSocket connections must use a valid API key
+# obtained from POST /api/login. Set to false for development.
+# ---------------------------------------------------------------------------
+enforce_token: false

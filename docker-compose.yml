@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  ryobi-local-server:
+    build: .
+    container_name: ryobi-local-server
+    restart: unless-stopped
+    ports:
+      # Map host port 80 to container 8080.
+      # For DNS redirect to work, map to port 80 on host:
+      #   - "80:8080"
+      # Or use port 8080 and configure a reverse proxy (nginx/Caddy) in front.
+      - "80:8080"
+    volumes:
+      # Mount your config file
+      - ./config/config.yaml:/app/config/config.yaml:ro
+      # Persist state between restarts
+      - ryobi_state:/data
+    environment:
+      LOG_LEVEL: INFO
+      # Uncomment to override config file credentials via env:
+      # RYOBI_USERNAME: your_email@example.com
+      # RYOBI_PASSWORD: your_password
+      # RYOBI_DEVICE_ID: GDO_XXXXXXXXXX
+      # RYOBI_CLOUD_POLL: "true"
+      # RYOBI_POLL_INTERVAL: "30"
+
+volumes:
+  ryobi_state:
