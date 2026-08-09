@@ -46,8 +46,11 @@ async def test_login_success(client):
     assert len(api_key) == 64  # 32 bytes hex
 
 
-async def test_login_no_credentials(client):
-    """With enforce_token=False and no expected credentials, any login succeeds."""
+async def test_login_no_credentials(aiohttp_client):
+    """With no username in config, any credentials are accepted."""
+    no_creds_config = {**BASE_CONFIG, "username": "", "password": ""}
+    app = await create_app(no_creds_config)
+    client = await aiohttp_client(app)
     resp = await client.post("/api/login", data={"username": "anyone", "password": "anything"})
     assert resp.status == 200
 
