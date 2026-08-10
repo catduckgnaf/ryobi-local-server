@@ -15,12 +15,14 @@ Plus two management endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import secrets
 import time
 from typing import Any
 
+import aiohttp
 from aiohttp import WSMsgType, web
 
 from .state import StateStore
@@ -219,6 +221,18 @@ async def _handle_ws_message(
 
             await store.apply_command(device_id, module_name, attr, value)
 
+            # Fire outgoing command webhook so the Pi/ESP can trigger a relay
+            webhook_url = config.get("command_webhook_url", "")
+            if webhook_url:
+                await _fire_command_webhook(
+                    webhook_url=webhook_url,
+                    timeout=int(config.get("command_webhook_timeout", 3)),
+                    device_id=device_id,
+                    module=module_name,
+                    attr=attr,
+                    value=value,
+                )
+
         # Send command ACK
         await ws.send_str(
             json.dumps({
@@ -236,6 +250,69 @@ async def _handle_ws_message(
                 "result": {"result": "OK"},
             })
         )
+
+
+async def _fire_command_webhook(
+    webhook_url: str,
+    timeout: int,
+    device_id: str,
+    module: str,
+    attr: str,
+    value: Any,
+) -> None:
+    """
+    POST a command to the configured outgoing webhook URL.
+
+    This is how HA commands reach your Pi/ESP to fire a physical relay.
+    The Pi/ESP should:
+    1. Fire the relay (toggles the door button)
+    2. Wait for the reed switch to confirm new state
+    3. POST the confirmed new state back to /state
+
+    Payload:
+      {
+        "device_id": "GDO_XXXXXXXXXX",
+        "module":    "garageDoor",
+        "attr":      "doorState",
+        "value":     "1",
+        "command":   "open"   # human-readable helper
+      }
+    """
+    # Build a human-readable command name
+    command_name_map = {
+        ("garageDoor", "doorState", "1"): "open",
+        ("garageDoor", "doorState", "0"): "close",
+        ("garageLight", "lightState", True): "light_on",
+        ("garageLight", "lightState", False): "light_off",
+    }
+    command_name = command_name_map.get((module, attr, value), f"{module}.{attr}={value}")
+
+    payload = {
+        "device_id": device_id,
+        "module": module,
+        "attr": attr,
+        "value": value,
+        "command": command_name,
+    }
+
+    LOGGER.info(
+        "Firing command webhook: %s -> %s (module=%s attr=%s value=%s)",
+        webhook_url, command_name, module, attr, value,
+    )
+
+    try:
+        async with asyncio.timeout(timeout):
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    webhook_url,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                ) as resp:
+                    LOGGER.debug("Command webhook response: %s", resp.status)
+    except asyncio.TimeoutError:
+        LOGGER.warning("Command webhook timed out after %ds: %s", timeout, webhook_url)
+    except Exception as err:  # pylint: disable=broad-except
+        LOGGER.warning("Command webhook error: %s", err)
 
 
 # ---------------------------------------------------------------------------

@@ -37,16 +37,28 @@ devices:
   #   name: "Garage Door 2"
 
 # ---------------------------------------------------------------------------
-# Cloud polling (optional but recommended)
-# When enabled, the server polls the real Ryobi cloud every `poll_interval`
-# seconds and mirrors the live device state locally. This means even if the
-# Ryobi app is flaky, the LOCAL server always has current state.
+# Cloud polling — disabled by default for fully offline / no-internet mode.
 #
-# Set to false if you want fully offline operation (state only changes via
-# the /state webhook or HA commands).
+# Set to true ONLY if you want the server to also mirror state from Ryobi's
+# real cloud (graceful degradation). Leave false for pure LAN operation.
 # ---------------------------------------------------------------------------
-cloud_poll: true
-poll_interval: 30   # seconds
+cloud_poll: false
+poll_interval: 30   # seconds (used only if cloud_poll: true)
+
+# ---------------------------------------------------------------------------
+# Command webhook (HIGHLY RECOMMENDED for full local control)
+#
+# When Home Assistant sends an open/close/light command via WebSocket,
+# this server will POST a JSON command to the URL below so your Pi or ESP
+# can fire a physical relay connected to the door's wall-button terminals.
+#
+# The server POSTs: {"command": "open"|"close"|"toggle", "device_id": "...", "module": "garageDoor", "attr": "doorState", "value": "1"}
+#
+# Example Flask receiver on a Pi is in examples/pi_command_receiver.py
+# Example ESPHome config is in examples/esphome_ryobi.yaml
+# ---------------------------------------------------------------------------
+# command_webhook_url: "http://192.168.1.50:5000/command"
+# command_webhook_timeout: 3   # seconds
 
 # ---------------------------------------------------------------------------
 # Security

@@ -11,6 +11,7 @@ from typing import Any
 
 from aiohttp import web
 
+from .dashboard import make_dashboard_handler
 from .models import GarageDoorState
 from .routes import (
     make_devices_handler,
@@ -67,6 +68,7 @@ async def create_app(config: dict[str, Any]) -> web.Application:
     app.router.add_get("/api/wsrpc", make_wsrpc_handler(store, config))
 
     # Management / webhook routes
+    app.router.add_get("/", make_dashboard_handler())  # ingress dashboard
     app.router.add_get("/state", make_state_get_handler(store))
     app.router.add_post("/state", make_state_post_handler(store))
     app.router.add_get("/health", make_health_handler())
