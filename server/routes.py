@@ -208,9 +208,9 @@ async def _handle_ws_message(
         module_type = params.get("moduleType")
         module_msg: dict[str, Any] = params.get("moduleMsg", {})
 
-        # Resolve module name from moduleType (inverse of get_module_type)
+        # Resolve module name from moduleType or message attribute
         module_type_map = {
-            5: "garageDoor",    # also garageLight
+            5: "garageDoor",
             6: "backupCharger",
             7: "wifiModule",
             1: "parkAssistLaser",
@@ -220,19 +220,24 @@ async def _handle_ws_message(
         }
         module_name = module_type_map.get(module_type, "garageDoor")
 
-        # module_msg is like {"lightState": True} or {"doorCommand": 1}
+        # module_msg is like {"lightState": 1} or {"doorCommand": 1}
         for attr, value in module_msg.items():
-            # Map doorCommand (open=1, close=0) to doorState
+            # Attribute-level module resolution override
+            if attr == "lightState":
+                module_name = "garageLight"
+            elif attr in ("doorCommand", "doorState", "vacationMode", "sensorFlag"):
+                module_name = "garageDoor"
+            elif attr in ("micEnable", "micEnabled"):
+                module_name = "btSpeaker"
+
+            # Map doorCommand (open=1, close=0) to door_state ("1" / "0")
             if attr == "doorCommand":
                 attr = "doorState"
-                value = "1" if value else "0"
-                # Briefly set to "opening"/"closing" then final state
-                transitional = "3" if value == "1" else "2"
-                await store.update_state(device_id, {"door_state": transitional})
+                value = "1" if str(value) in ("1", "true", "open") else "0"
 
             await store.apply_command(device_id, module_name, attr, value)
 
-            # Fire outgoing command webhook so the Pi/ESP can trigger a relay
+            # Fire outgoing command webhook if configured
             webhook_url = config.get("command_webhook_url", "")
             if webhook_url:
                 await _fire_command_webhook(

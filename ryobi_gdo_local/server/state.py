@@ -94,7 +94,9 @@ class StateStore:
         """
         field_map = {
             ("garageLight", "lightState"): "light_state",
+            ("garageDoor", "lightState"): "light_state",
             ("garageDoor", "doorState"): "door_state",
+            ("garageDoor", "doorCommand"): "door_state",
             ("garageDoor", "vacationMode"): "vacation_mode",
             ("parkAssistLaser", "moduleState"): "park_assist",
             ("inflator", "moduleState"): "inflator",
