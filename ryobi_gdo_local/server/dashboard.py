@@ -137,6 +137,14 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <button class="btn-close"     onclick="pushState('door_state','0')">🔒 Door Closed</button>
         <button class="btn-light-on"  onclick="pushState('light_state',true)">💡 Light On</button>
         <button class="btn-light-off" onclick="pushState('light_state',false)">🌙 Light Off</button>
+        <button class="btn-fan-on"    onclick="pushState('fan',true)">🌀 Fan On</button>
+        <button class="btn-fan-off"   onclick="pushState('fan',false)">⏹ Fan Off</button>
+        <button class="btn-inf-on"    onclick="pushState('inflator',true)">💨 Inflator On</button>
+        <button class="btn-inf-off"   onclick="pushState('inflator',false)">🛑 Inflator Off</button>
+        <button class="btn-laser-on"  onclick="pushState('park_assist',true)">🔴 Laser On</button>
+        <button class="btn-laser-off" onclick="pushState('park_assist',false)">⚫ Laser Off</button>
+        <button class="btn-spk-on"    onclick="pushState('bt_speaker',true)">🔊 Speaker On</button>
+        <button class="btn-spk-off"   onclick="pushState('bt_speaker',false)">🔇 Speaker Off</button>
       </div>
     </div>
   </div>
@@ -160,6 +168,11 @@ function renderState(data) {
   const doorLabel = DOOR_LABELS[doorState] ?? doorState;
   const doorCls   = DOOR_CLASSES[doorState] ?? '';
   const lightOn   = data.light_state;
+  const fanOn     = data.fan;
+  const inflatorOn= data.inflator;
+  const laserOn   = data.park_assist;
+  const spkOn     = data.bt_speaker;
+  const micOn     = data.micStatus;
 
   grid.innerHTML = `
     <div class="state-item">
@@ -169,6 +182,26 @@ function renderState(data) {
     <div class="state-item">
       <div class="label">Light</div>
       <div class="value ${lightOn ? 'light-on':'light-off'}">${lightOn ? 'On':'Off'}</div>
+    </div>
+    <div class="state-item">
+      <div class="label">Fan</div>
+      <div class="value ${fanOn ? 'door-open':'light-off'}">${fanOn ? 'On (' + (data.fan_speed || 1) + ')' : 'Off'}</div>
+    </div>
+    <div class="state-item">
+      <div class="label">Inflator</div>
+      <div class="value ${inflatorOn ? 'door-moving':'light-off'}">${inflatorOn ? 'Running':'Idle'}</div>
+    </div>
+    <div class="state-item">
+      <div class="label">Park Assist Laser</div>
+      <div class="value ${laserOn ? 'door-open':'light-off'}">${laserOn ? 'Active':'Off'}</div>
+    </div>
+    <div class="state-item">
+      <div class="label">Bluetooth Speaker</div>
+      <div class="value ${spkOn ? 'door-closed':'light-off'}">${spkOn ? 'Active':'Off'}</div>
+    </div>
+    <div class="state-item">
+      <div class="label">Microphone</div>
+      <div class="value ${micOn ? 'door-open':'light-off'}">${micOn ? 'Enabled':'Disabled'}</div>
     </div>
     ${data.battery_level != null ? `<div class="state-item"><div class="label">Battery</div><div class="value">${data.battery_level}%</div></div>` : ''}
     ${data.wifi_rssi != null ? `<div class="state-item"><div class="label">WiFi RSSI</div><div class="value">${data.wifi_rssi} dBm</div></div>` : ''}

@@ -100,6 +100,8 @@ class StateStore:
             ("inflator", "moduleState"): "inflator",
             ("btSpeaker", "moduleState"): "bt_speaker",
             ("btSpeaker", "micEnable"): "mic_status",
+            ("fan", "moduleState"): "fan",
+            ("fan", "speed"): "fan_speed",
         }
         field = field_map.get((module, attr))
         if field is None:
@@ -107,7 +109,14 @@ class StateStore:
             return False
 
         # Normalize bool-like values
-        if isinstance(value, str):
+        if field == "fan_speed":
+            try:
+                value = int(value)
+            except (ValueError, TypeError):
+                value = 0
+        elif field == "door_state":
+            value = str(value)
+        elif isinstance(value, str):
             value = value.lower() in ("1", "true", "on", "open")
         elif isinstance(value, int):
             value = bool(value)

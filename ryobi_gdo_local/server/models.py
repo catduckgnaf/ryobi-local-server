@@ -18,8 +18,8 @@ class GarageDoorState:
 
     # Accessory states
     light_state: bool = False
-    battery_level: int | None = None   # percentage, None if no backup charger
-    wifi_rssi: int | None = None        # dBm, None if unknown
+    battery_level: int | None = 100    # percentage, default 100 for backup charger
+    wifi_rssi: int | None = -55        # dBm, default strong signal
     safety: bool = False                # safety sensor blocked
     motion: bool = False                # motion sensor
     vacation_mode: bool = False
@@ -27,6 +27,8 @@ class GarageDoorState:
     bt_speaker: bool = False
     mic_status: bool = False
     inflator: bool = False
+    fan: bool = False
+    fan_speed: int = 0
 
     # Modules present on this device (module_name -> key_in_deviceTypeMap)
     modules: dict[str, str] = field(default_factory=dict)
@@ -45,6 +47,8 @@ class GarageDoorState:
             "bt_speaker": self.bt_speaker,
             "micStatus": self.mic_status,
             "inflator": self.inflator,
+            "fan": self.fan,
+            "fan_speed": self.fan_speed,
             "device_name": self.device_name,
         }
 
@@ -70,59 +74,62 @@ class GarageDoorState:
         }
 
         # --- garageLight module ---
-        if "garageLight" in self.modules or self.light_state is not None:
-            light_key = self.modules.get("garageLight", "garageLight_7")
-            dtm[light_key] = {
-                "at": {
-                    "lightState": {"value": 1 if self.light_state else 0},
-                }
+        light_key = self.modules.get("garageLight", "garageLight_7")
+        dtm[light_key] = {
+            "at": {
+                "lightState": {"value": 1 if self.light_state else 0},
             }
+        }
 
         # --- backupCharger (battery) ---
-        if self.battery_level is not None:
-            charger_key = self.modules.get("backupCharger", "backupCharger_6")
-            dtm[charger_key] = {
-                "at": {
-                    "chargeLevel": {"value": self.battery_level},
-                }
+        charger_key = self.modules.get("backupCharger", "backupCharger_6")
+        dtm[charger_key] = {
+            "at": {
+                "chargeLevel": {"value": self.battery_level if self.battery_level is not None else 100},
             }
+        }
 
         # --- wifiModule ---
-        if self.wifi_rssi is not None:
-            wifi_key = self.modules.get("wifiModule", "wifiModule_7")
-            dtm[wifi_key] = {
-                "at": {
-                    "rssi": {"value": self.wifi_rssi},
-                }
+        wifi_key = self.modules.get("wifiModule", "wifiModule_7")
+        dtm[wifi_key] = {
+            "at": {
+                "rssi": {"value": self.wifi_rssi if self.wifi_rssi is not None else -55},
             }
+        }
 
         # --- parkAssistLaser ---
-        if "parkAssistLaser" in self.modules or self.park_assist:
-            laser_key = self.modules.get("parkAssistLaser", "parkAssistLaser_1")
-            dtm[laser_key] = {
-                "at": {
-                    "moduleState": {"value": 1 if self.park_assist else 0},
-                }
+        laser_key = self.modules.get("parkAssistLaser", "parkAssistLaser_1")
+        dtm[laser_key] = {
+            "at": {
+                "moduleState": {"value": 1 if self.park_assist else 0},
             }
+        }
 
         # --- inflator ---
-        if "inflator" in self.modules or self.inflator:
-            inf_key = self.modules.get("inflator", "inflator_4")
-            dtm[inf_key] = {
-                "at": {
-                    "moduleState": {"value": 1 if self.inflator else 0},
-                }
+        inf_key = self.modules.get("inflator", "inflator_4")
+        dtm[inf_key] = {
+            "at": {
+                "moduleState": {"value": 1 if self.inflator else 0},
             }
+        }
 
         # --- btSpeaker ---
-        if "btSpeaker" in self.modules or self.bt_speaker:
-            spk_key = self.modules.get("btSpeaker", "btSpeaker_2")
-            dtm[spk_key] = {
-                "at": {
-                    "moduleState": {"value": 1 if self.bt_speaker else 0},
-                    "micEnable": {"value": 1 if self.mic_status else 0},
-                }
+        spk_key = self.modules.get("btSpeaker", "btSpeaker_2")
+        dtm[spk_key] = {
+            "at": {
+                "moduleState": {"value": 1 if self.bt_speaker else 0},
+                "micEnable": {"value": 1 if self.mic_status else 0},
             }
+        }
+
+        # --- fan ---
+        fan_key = self.modules.get("fan", "fan_3")
+        dtm[fan_key] = {
+            "at": {
+                "moduleState": {"value": 1 if self.fan else 0},
+                "speed": {"value": self.fan_speed if self.fan else 0},
+            }
+        }
 
         return dtm
 
