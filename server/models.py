@@ -63,7 +63,7 @@ class GarageDoorState:
         dtm: dict[str, Any] = {}
 
         # --- garageDoor module ---
-        door_key = self.modules.get("garageDoor", "garageDoor_7")
+        door_key = (self.modules or {}).get("garageDoor", "garageDoor_7")
         dtm[door_key] = {
             "at": {
                 "doorState": {"value": int(self.door_state)},
@@ -74,7 +74,7 @@ class GarageDoorState:
         }
 
         # --- garageLight module ---
-        light_key = self.modules.get("garageLight", "garageLight_7")
+        light_key = (self.modules or {}).get("garageLight", "garageLight_7")
         dtm[light_key] = {
             "at": {
                 "lightState": {"value": 1 if self.light_state else 0},
@@ -82,7 +82,7 @@ class GarageDoorState:
         }
 
         # --- backupCharger (battery) ---
-        charger_key = self.modules.get("backupCharger", "backupCharger_6")
+        charger_key = (self.modules or {}).get("backupCharger", "backupCharger_6")
         dtm[charger_key] = {
             "at": {
                 "chargeLevel": {"value": self.battery_level if self.battery_level is not None else 100},
@@ -90,7 +90,7 @@ class GarageDoorState:
         }
 
         # --- wifiModule ---
-        wifi_key = self.modules.get("wifiModule", "wifiModule_7")
+        wifi_key = (self.modules or {}).get("wifiModule", "wifiModule_7")
         dtm[wifi_key] = {
             "at": {
                 "rssi": {"value": self.wifi_rssi if self.wifi_rssi is not None else -55},
@@ -98,7 +98,7 @@ class GarageDoorState:
         }
 
         # --- parkAssistLaser ---
-        laser_key = self.modules.get("parkAssistLaser", "parkAssistLaser_1")
+        laser_key = (self.modules or {}).get("parkAssistLaser", "parkAssistLaser_1")
         dtm[laser_key] = {
             "at": {
                 "moduleState": {"value": 1 if self.park_assist else 0},
@@ -106,7 +106,7 @@ class GarageDoorState:
         }
 
         # --- inflator ---
-        inf_key = self.modules.get("inflator", "inflator_4")
+        inf_key = (self.modules or {}).get("inflator", "inflator_4")
         dtm[inf_key] = {
             "at": {
                 "moduleState": {"value": 1 if self.inflator else 0},
@@ -114,7 +114,7 @@ class GarageDoorState:
         }
 
         # --- btSpeaker ---
-        spk_key = self.modules.get("btSpeaker", "btSpeaker_2")
+        spk_key = (self.modules or {}).get("btSpeaker", "btSpeaker_2")
         dtm[spk_key] = {
             "at": {
                 "moduleState": {"value": 1 if self.bt_speaker else 0},
@@ -123,7 +123,7 @@ class GarageDoorState:
         }
 
         # --- fan ---
-        fan_key = self.modules.get("fan", "fan_3")
+        fan_key = (self.modules or {}).get("fan", "fan_3")
         dtm[fan_key] = {
             "at": {
                 "moduleState": {"value": 1 if self.fan else 0},

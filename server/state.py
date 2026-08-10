@@ -213,7 +213,9 @@ class StateStore:
                     LOGGER.warning("Persisted state has unknown device %s, skipping", device_id)
                     continue
                 for field_name, value in saved.items():
-                    if hasattr(dev, field_name) and field_name not in ("device_id",):
+                    if field_name == "modules" and isinstance(value, dict) and value:
+                        dev.modules.update(value)
+                    elif hasattr(dev, field_name) and field_name not in ("device_id", "modules"):
                         setattr(dev, field_name, value)
             LOGGER.info("Loaded persisted state from %s", _STATE_FILE)
         except Exception as err:  # pylint: disable=broad-except
