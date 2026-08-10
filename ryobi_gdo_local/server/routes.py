@@ -79,7 +79,7 @@ def make_login_handler(store: StateStore, config: dict):
         token = _issue_token(username)
         LOGGER.info("Login successful for user: %s", username)
 
-        # Mimic the Ryobi login response shape
+        # Mimic the Ryobi login response shape with local server metadata
         response = {
             "result": {
                 "metaData": {
@@ -87,9 +87,11 @@ def make_login_handler(store: StateStore, config: dict):
                     "username": username,
                 },
                 "status": "OK",
+                "server_type": "local",
+                "local_server": True,
             }
         }
-        return web.json_response(response)
+        return web.json_response(response, headers={"X-Server": "Ryobi-Local-Server"})
 
     return handle_login
 
@@ -100,7 +102,10 @@ def make_devices_handler(store: StateStore):
     async def handle_devices(request: web.Request) -> web.Response:
         devices = store.list_devices()
         result = [d.build_list_entry() for d in devices]
-        return web.json_response({"result": result})
+        return web.json_response(
+            {"result": result, "server_type": "local", "local_server": True},
+            headers={"X-Server": "Ryobi-Local-Server"},
+        )
 
     return handle_devices
 
@@ -113,8 +118,14 @@ def make_device_detail_handler(store: StateStore):
         device = store.get_device(device_id)
         if device is None:
             LOGGER.warning("Device not found: %s", device_id)
-            return web.json_response({"result": [], "error": "Device not found"})
-        return web.json_response({"result": [device.build_device_result()]})
+            return web.json_response(
+                {"result": [], "error": "Device not found"},
+                headers={"X-Server": "Ryobi-Local-Server"},
+            )
+        return web.json_response(
+            {"result": [device.build_device_result()], "server_type": "local", "local_server": True},
+            headers={"X-Server": "Ryobi-Local-Server"},
+        )
 
     return handle_device_detail
 
