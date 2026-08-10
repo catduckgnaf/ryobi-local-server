@@ -180,10 +180,16 @@ function renderState(data) {
   `;
 }
 
+// Compute Ingress base path
+const basePath = (function() {
+  const p = window.location.pathname;
+  return p.endsWith('/') ? p : p + '/';
+})();
+
 // Fetch initial state
 async function loadState() {
   try {
-    const r = await fetch('/state');
+    const r = await fetch(basePath + 'state');
     const data = await r.json();
     const ids = Object.keys(data);
     if (ids.length === 0) { log('No devices found'); return; }
@@ -198,7 +204,7 @@ async function pushState(field, value) {
   if (!deviceId) { log('No device loaded'); return; }
   const body = { device_id: deviceId, [field]: value };
   try {
-    const r = await fetch('/state', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    const r = await fetch(basePath + 'state', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
     const j = await r.json();
     log(`Pushed ${field}=${JSON.stringify(value)} → ${j.result}`);
     await loadState();
@@ -208,9 +214,10 @@ async function pushState(field, value) {
 // WebSocket live updates
 function connectWS() {
   const dot = document.getElementById('ws-dot');
-  // Use the wsrpc endpoint — we just listen for broadcasts
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${proto}//${location.host}/api/wsrpc`);
+  const wsCleanPath = basePath.replace(/^\/+/, '');
+  const wsUrl = `${proto}//${location.host}/${wsCleanPath}api/wsrpc`;
+  const ws = new WebSocket(wsUrl);
 
   ws.onopen = () => {
     dot.classList.remove('offline');
