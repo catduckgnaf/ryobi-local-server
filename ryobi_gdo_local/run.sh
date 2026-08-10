@@ -126,6 +126,15 @@ cat > "${CONFIG_FILE}" <<EOF
 devices:
   - device_id: "${DEVICE_ID}"
     name: "${DEVICE_NAME}"
+    modules:
+      garageDoor: "garageDoor_7"
+      garageLight: "garageLight_7"
+      backupCharger: "backupCharger_6"
+      wifiModule: "wifiModule_7"
+      parkAssistLaser: "parkAssistLaser_1"
+      inflator: "inflator_4"
+      btSpeaker: "btSpeaker_2"
+      fan: "fan_3"
 
 cloud_poll: false
 enforce_token: false
