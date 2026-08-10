@@ -1,75 +1,42 @@
 ---
 name: "Ryobi GDO Local Server"
-description: >
-  Fully local TiwiConnect cloud emulator for Ryobi GDO — runs the Ryobi API server
-  on your LAN and provides built-in DNS so tti.tiwiconnect.com resolves locally.
-  No Ryobi internet access required. Works with the ryobi_gdo custom integration.
 version: "1.0.0"
 slug: "ryobi_gdo_local"
+description: "Local TiwiConnect emulator for Ryobi GDO with built-in DNS redirect"
 url: "https://github.com/catduckgnaf/ryobi-local-server"
-init: false
-
 arch:
-  - armv7
   - aarch64
   - amd64
-  - i386
   - armhf
-
-# Host network is required so:
-# 1. Port 80  is accessible to other LAN devices and the HA integration
-# 2. Port 53  (dnsmasq) can be used as a LAN DNS server
+  - armv7
+  - i386
+startup: services
+boot: auto
+init: false
 host_network: true
-
-# Capabilities needed to bind port 53 (DNS) and port 80
 privileged:
   - NET_ADMIN
-  - NET_BIND_SERVICE
-
-map:
-  - data:rw
-
+ingress: true
+ingress_port: 8099
+panel_icon: "mdi:garage"
+panel_title: "Ryobi GDO"
+environment:
+  STATE_FILE: "/data/ryobi_state.json"
 options:
   device_id: ""
   device_name: "Garage Door"
   log_level: "info"
   server_port: 80
-  # DNS: when true the addon runs dnsmasq on port 53 so you can point your
-  # router's DNS at the HA machine and have tti.tiwiconnect.com resolve locally.
   dns_enabled: true
   dns_port: 53
-  # Command webhook: where to forward HA open/close commands (Pi/ESP relay URL)
-  # Leave blank if you have no hardware relay — HA commands only update state.
   command_webhook_url: ""
   command_webhook_timeout: 3
-
 schema:
   device_id: "str"
   device_name: "str"
   log_level: "list(debug|info|warning|error)"
-  server_port: "int"
+  server_port: "port"
   dns_enabled: "bool"
-  dns_port: "int"
-  command_webhook_url: "str"
-  command_webhook_timeout: "int"
-
-# Ports exposed — user can override server_port in options
-# but these define what the Supervisor publishes
-ports:
-  80/tcp: 80
-  53/udp: 53
-  53/tcp: 53
-
-ports_description:
-  80/tcp: "Ryobi local API server (HTTP + WebSocket)"
-  53/udp: "DNS server (UDP) — redirect tti.tiwiconnect.com"
-  53/tcp: "DNS server (TCP) — redirect tti.tiwiconnect.com"
-
-ingress: true
-ingress_port: 8099
-panel_icon: mdi:garage
-panel_title: Ryobi GDO
-
-# Store state file in /data (persists across addon restarts)
-environment:
-  STATE_FILE: /data/ryobi_state.json
+  dns_port: "port"
+  command_webhook_url: "str?"
+  command_webhook_timeout: "int?"
