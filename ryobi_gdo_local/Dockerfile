@@ -28,17 +28,18 @@ RUN apk add --no-cache \
     jq
 
 # Install Python dependencies
+# NOTE: Docker build context is the addon folder (ryobi_gdo_local/)
 COPY server/requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 
-# Copy the ryobi server source
+# Copy the ryobi server source into /app/server
 COPY server/ /app/server/
 
-# Copy s6-overlay service scripts (startup/process management)
-COPY ha-addon/ryobi_gdo_local/rootfs/ /
+# Copy rootfs overlay (s6-overlay service scripts, etc.)
+COPY rootfs/ /
 
 # Copy the main entrypoint
-COPY ha-addon/ryobi_gdo_local/run.sh /run.sh
+COPY run.sh /run.sh
 RUN chmod +x /run.sh
 
 WORKDIR /app
