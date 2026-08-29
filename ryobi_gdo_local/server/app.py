@@ -14,6 +14,7 @@ from aiohttp import web
 from .dashboard import make_dashboard_handler
 from .models import GarageDoorState
 from .routes import (
+    make_camera_snapshot_handler,
     make_devices_handler,
     make_device_detail_handler,
     make_health_handler,
@@ -65,6 +66,7 @@ async def create_app(config: dict[str, Any]) -> web.Application:
     app.router.add_post("/api/login", make_login_handler(store, config))
     app.router.add_get("/api/devices", make_devices_handler(store))
     app.router.add_get("/api/devices/{device_id}", make_device_detail_handler(store))
+    app.router.add_get("/api/camera/{device_id}/snapshot", make_camera_snapshot_handler(store))
     app.router.add_get("/api/wsrpc", make_wsrpc_handler(store, config))
 
     # Management / webhook routes

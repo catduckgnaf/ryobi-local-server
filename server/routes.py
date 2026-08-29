@@ -427,3 +427,21 @@ def make_health_handler():
         return web.json_response({"status": "ok"})
 
     return handle_health
+
+
+def make_camera_snapshot_handler(store: StateStore):
+    """GET /api/camera/{device_id}/snapshot — return snapshot image for camera entity."""
+
+    async def handle_snapshot(request: web.Request) -> web.Response:
+        device_id = request.match_info.get("device_id", "")
+        # Minimal valid 1x1 GIF / SVG placeholder frame for local security camera
+        svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
+<rect width="100%" height="100%" fill="#1e1e1e"/>
+<circle cx="320" cy="200" r="60" fill="#333" stroke="#00bcd4" stroke-width="4"/>
+<circle cx="320" cy="200" r="25" fill="#00bcd4"/>
+<text x="50%" y="320" fill="#ffffff" font-family="sans-serif" font-size="20" font-weight="bold" text-anchor="middle">Ryobi GDO Security Camera</text>
+<text x="50%" y="360" fill="#888888" font-family="sans-serif" font-size="14" text-anchor="middle">Device: {device_id}</text>
+</svg>'''
+        return web.Response(text=svg, content_type="image/svg+xml")
+
+    return handle_snapshot

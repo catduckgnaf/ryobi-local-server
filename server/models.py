@@ -33,6 +33,9 @@ class GarageDoorState:
     ext_cord: bool = True
     fan: bool = False
     fan_speed: int = 0
+    camera_state: bool = True
+    camera_recording: bool = False
+    camera_image_url: str = ""
 
     # Modules present on this device (module_name -> key_in_deviceTypeMap)
     modules: dict[str, str] = field(default_factory=dict)
@@ -57,6 +60,9 @@ class GarageDoorState:
             "ext_cord": self.ext_cord,
             "fan": self.fan,
             "fan_speed": self.fan_speed,
+            "camera_state": self.camera_state,
+            "camera_recording": self.camera_recording,
+            "camera_image_url": self.camera_image_url,
             "device_name": self.device_name,
         }
 
@@ -146,12 +152,29 @@ class GarageDoorState:
 
         # --- fan ---
         fan_key = (self.modules or {}).get("fan", "fan_3")
-        dtm[fan_key] = {
-            "at": {
-                "moduleState": {"value": 1 if self.fan else 0},
-                "speed": {"value": self.fan_speed if self.fan else 0},
+        if "fan" in (self.modules or {}):
+            dtm[fan_key] = {
+                "at": {
+                    "moduleState": {"value": 1 if self.fan else 0},
+                    "speed": {"value": self.fan_speed if self.fan else 0},
+                }
             }
-        }
+
+        # --- camera ---
+        cam_key = (self.modules or {}).get("camera", "securityCamera_1")
+        if "camera" in (self.modules or {}) or "securityCamera" in (self.modules or {}):
+            dtm[cam_key] = {
+                "at": {
+                    "moduleState": {"value": 1 if self.camera_state else 0},
+                    "recordingState": {"value": 1 if self.camera_recording else 0},
+                    "streamUrl": {"value": f"/api/camera/{self.device_id}/live"},
+                },
+                "metaData": {
+                    "moduleId": 9,
+                    "name": "Security Camera",
+                    "icon": "/img/profiles/camera.png",
+                },
+            }
 
         return dtm
 
