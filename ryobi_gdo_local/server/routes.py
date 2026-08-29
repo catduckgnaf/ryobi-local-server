@@ -154,6 +154,7 @@ def make_wsrpc_handler(store: StateStore, config: dict):
                 elif msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
                     break
         finally:
+            store.unregister_device_ws(ws)
             store.remove_ws_client(ws)
             LOGGER.info("WebSocket client disconnected from %s", request.remote)
 
@@ -181,15 +182,48 @@ async def _handle_ws_message(
     if method == "srvWebSocketAuth":
         # Validate API key (or accept any if not enforced)
         api_key = params.get("apiKey", "")
+        var_name = params.get("varName", "")
         authorized = _validate_token(api_key) or not config.get("enforce_token", False)
+
+        # Send authorizedWebSocket event
         await ws.send_str(
             json.dumps({
-                "id": msg_id,
-                "result": {"authorized": authorized, "result": "OK"},
+                "jsonrpc": "2.0",
+                "method": "authorizedWebSocket",
+                "params": {"authorized": authorized, "socketId": f"local_{var_name or 'client'}"},
             })
         )
+
+        # Send method response
+        await ws.send_str(
+            json.dumps({
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {"authorized": authorized, "varName": var_name, "aCnt": 0},
+            })
+        )
+
+        if authorized and var_name and store.get_device(var_name):
+            store.register_device_ws(var_name, ws)
+
         if not authorized:
-            LOGGER.warning("WS auth rejected: invalid API key")
+            LOGGER.warning("WS auth rejected: invalid API key for %s", var_name)
+
+    elif method in ("wskAttributeUpdateNtfy", "gdoModuleMsg", "gdoModuleState"):
+        # Real-time state push from physical opener hardware
+        var_name = params.get("varName") or params.get("topic")
+        if var_name:
+            # Strip topic suffix if present (e.g. c4be84734c7b.wskAttributeUpdateNtfy)
+            dev_id = var_name.split(".")[0]
+            await store.handle_device_push(dev_id, params)
+
+        await ws.send_str(
+            json.dumps({
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {"result": "OK"},
+            })
+        )
 
     elif method == "wskSubscribe":
         # Subscribe acknowledgement — we push to all clients anyway
@@ -197,6 +231,7 @@ async def _handle_ws_message(
         LOGGER.debug("WS subscribe for topic: %s", topic)
         await ws.send_str(
             json.dumps({
+                "jsonrpc": "2.0",
                 "id": msg_id,
                 "result": {"result": "OK", "topic": topic},
             })

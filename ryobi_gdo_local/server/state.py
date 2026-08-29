@@ -31,6 +31,8 @@ class StateStore:
         self._devices: dict[str, GarageDoorState] = {}
         # Set of active WebSocket responses (aiohttp WebSocketResponse)
         self._ws_clients: set[Any] = set()
+        # Physical hardware WebSocket connections (device_id -> ws)
+        self._device_sockets: dict[str, Any] = {}
         self._lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
@@ -50,9 +52,91 @@ class StateStore:
         """Return all registered devices."""
         return list(self._devices.values())
 
+    def register_device_ws(self, device_id: str, ws: Any) -> None:
+        """Register a physical hardware WebSocket connection."""
+        self._device_sockets[device_id] = ws
+        LOGGER.info("Physical hardware WebSocket connected for device %s", device_id)
+
+    def unregister_device_ws(self, ws: Any) -> None:
+        """Remove physical hardware WebSocket if disconnected."""
+        for dev_id, dev_ws in list(self._device_sockets.items()):
+            if dev_ws == ws:
+                del self._device_sockets[dev_id]
+                LOGGER.info("Physical hardware WebSocket disconnected for device %s", dev_id)
+
+    def is_device_ws(self, ws: Any) -> bool:
+        """Return True if the websocket belongs to physical hardware."""
+        return ws in self._device_sockets.values()
+
     # ------------------------------------------------------------------
     # State updates
     # ------------------------------------------------------------------
+
+    async def handle_device_push(self, device_id: str, raw_params: dict[str, Any]) -> None:
+        """Parse incoming push notifications from the physical hardware opener."""
+        updates: dict[str, Any] = {}
+        for key, val_obj in raw_params.items():
+            if key in ("varName", "topic", "id") or not isinstance(val_obj, dict):
+                continue
+            val = val_obj.get("value")
+            if val is None:
+                continue
+
+            parts = key.split(".")
+            attr = parts[1] if len(parts) > 1 else key
+
+            if "garageDoor" in key:
+                if attr == "doorState":
+                    updates["door_state"] = str(val)
+                elif attr == "doorPosition":
+                    updates["door_position"] = int(val)
+                elif attr == "maxDoorPosition":
+                    updates["max_door_position"] = int(val)
+                elif attr == "motorStatus":
+                    updates["motor_status"] = int(val)
+                elif attr == "motionSensor":
+                    updates["motion"] = bool(val)
+                elif attr == "sensorFlag":
+                    updates["safety"] = bool(val)
+                elif attr == "vacationMode":
+                    updates["vacation_mode"] = bool(val)
+
+            elif "garageLight" in key:
+                if attr == "lightState":
+                    updates["light_state"] = bool(val)
+
+            elif "backupCharger" in key:
+                if attr in ("chargeLevel", "batteryLevel"):
+                    updates["battery_level"] = int(val)
+
+            elif "wifiModule" in key:
+                if attr == "rssi":
+                    updates["wifi_rssi"] = int(val)
+
+            elif "parkAssistLaser" in key:
+                if attr == "moduleState":
+                    updates["park_assist"] = bool(val)
+
+            elif "inflator" in key:
+                if attr == "moduleState":
+                    updates["inflator"] = bool(val)
+
+            elif "btSpeaker" in key:
+                if attr == "moduleState":
+                    updates["bt_speaker"] = bool(val)
+                elif attr in ("micEnable", "micEnabled"):
+                    updates["mic_status"] = bool(val)
+
+            elif "fan" in key:
+                if attr == "speed":
+                    updates["fan_speed"] = int(val)
+                    updates["fan"] = bool(val > 0)
+                elif attr == "moduleState":
+                    updates["fan"] = bool(val)
+
+        if updates:
+            LOGGER.info("Physical device [%s] pushed updates: %s", device_id, updates)
+            await self.update_state(device_id, updates)
 
     async def update_state(self, device_id: str, updates: dict[str, Any]) -> bool:
         """
@@ -88,7 +172,7 @@ class StateStore:
 
     async def apply_command(self, device_id: str, module: str, attr: str, value: Any) -> bool:
         """
-        Apply a command (from WebSocket gdoModuleCommand) to local state.
+        Apply a command (from WebSocket gdoModuleCommand) to local state and forward to hardware.
 
         Maps module + attr pairs to GarageDoorState fields.
         """
@@ -113,17 +197,50 @@ class StateStore:
         # Normalize bool-like values
         if field == "fan_speed":
             try:
-                value = int(value)
+                norm_value = int(value)
             except (ValueError, TypeError):
-                value = 0
+                norm_value = 0
         elif field == "door_state":
-            value = str(value)
+            norm_value = str(value)
         elif isinstance(value, str):
-            value = value.lower() in ("1", "true", "on", "open")
+            norm_value = value.lower() in ("1", "true", "on", "open")
         elif isinstance(value, int):
-            value = bool(value)
+            norm_value = bool(value)
+        else:
+            norm_value = value
 
-        return await self.update_state(device_id, {field: value})
+        # Forward command down to physical opener if connected
+        device_ws = self._device_sockets.get(device_id)
+        if device_ws and not device_ws.closed:
+            module_info = {
+                "garageDoor": (5, 7, {"doorCommand": 1 if str(value) in ("1", "true", "open") else 0}),
+                "garageLight": (5, 7, {"lightState": 1 if norm_value else 0}),
+                "parkAssistLaser": (1, 3, {"moduleState": 1 if norm_value else 0}),
+                "inflator": (4, 0, {"moduleState": 1 if norm_value else 0}),
+                "btSpeaker": (2, 6, {"moduleState": 1 if norm_value else 0} if attr != "micEnable" else {"micEnable": 1 if norm_value else 0}),
+                "fan": (3, 3, {"speed": norm_value} if attr == "speed" else {"moduleState": 1 if norm_value else 0}),
+            }
+            if module in module_info:
+                mod_type, port_id, mod_msg = module_info[module]
+                cmd_payload = {
+                    "jsonrpc": "2.0",
+                    "id": int(asyncio.get_event_loop().time() * 1000),
+                    "method": "gdoModuleCommand",
+                    "params": {
+                        "msgType": 16,
+                        "moduleType": mod_type,
+                        "portId": port_id,
+                        "moduleMsg": mod_msg,
+                        "topic": device_id,
+                    },
+                }
+                try:
+                    await device_ws.send_str(json.dumps(cmd_payload))
+                    LOGGER.info("Forwarded command to physical device %s: %s", device_id, cmd_payload)
+                except Exception as err:
+                    LOGGER.warning("Failed to forward command to physical device %s: %s", device_id, err)
+
+        return await self.update_state(device_id, {field: norm_value})
 
     # ------------------------------------------------------------------
     # WebSocket client management
@@ -184,6 +301,9 @@ class StateStore:
                 data[device_id] = {
                     "device_name": dev.device_name,
                     "door_state": dev.door_state,
+                    "door_position": dev.door_position,
+                    "max_door_position": dev.max_door_position,
+                    "motor_status": dev.motor_status,
                     "light_state": dev.light_state,
                     "battery_level": dev.battery_level,
                     "wifi_rssi": dev.wifi_rssi,
@@ -194,6 +314,7 @@ class StateStore:
                     "bt_speaker": dev.bt_speaker,
                     "mic_status": dev.mic_status,
                     "inflator": dev.inflator,
+                    "ext_cord": dev.ext_cord,
                     "modules": dev.modules,
                 }
             async with aiofiles.open(_STATE_FILE, "w") as f:

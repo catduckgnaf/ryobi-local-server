@@ -15,6 +15,9 @@ class GarageDoorState:
 
     # Core door state: "0"=closed, "1"=open, "2"=closing, "3"=opening, "4"=fault
     door_state: str = "0"
+    door_position: int = 1
+    max_door_position: int = 93
+    motor_status: int = 1
 
     # Accessory states
     light_state: bool = False
@@ -27,6 +30,7 @@ class GarageDoorState:
     bt_speaker: bool = False
     mic_status: bool = False
     inflator: bool = False
+    ext_cord: bool = True
     fan: bool = False
     fan_speed: int = 0
 
@@ -37,6 +41,9 @@ class GarageDoorState:
         """Return flat dict matching what the HA integration reads from coordinator.data."""
         return {
             "door_state": self.door_state,
+            "door_position": self.door_position,
+            "max_door_position": self.max_door_position,
+            "motor_status": self.motor_status,
             "light_state": self.light_state,
             "battery_level": self.battery_level,
             "wifi_rssi": self.wifi_rssi,
@@ -47,6 +54,7 @@ class GarageDoorState:
             "bt_speaker": self.bt_speaker,
             "micStatus": self.mic_status,
             "inflator": self.inflator,
+            "ext_cord": self.ext_cord,
             "fan": self.fan,
             "fan_speed": self.fan_speed,
             "device_name": self.device_name,
@@ -67,6 +75,9 @@ class GarageDoorState:
         dtm[door_key] = {
             "at": {
                 "doorState": {"value": int(self.door_state)},
+                "doorPosition": {"value": self.door_position},
+                "maxDoorPosition": {"value": self.max_door_position},
+                "motorStatus": {"value": self.motor_status},
                 "sensorFlag": {"value": 1 if self.safety else 0},
                 "vacationMode": {"value": 1 if self.vacation_mode else 0},
                 "motionSensor": {"value": 1 if self.motion else 0},
@@ -82,7 +93,7 @@ class GarageDoorState:
         }
 
         # --- backupCharger (battery) ---
-        charger_key = (self.modules or {}).get("backupCharger", "backupCharger_6")
+        charger_key = (self.modules or {}).get("backupCharger", "backupCharger_8")
         dtm[charger_key] = {
             "at": {
                 "chargeLevel": {"value": self.battery_level if self.battery_level is not None else 100},
@@ -90,11 +101,22 @@ class GarageDoorState:
         }
 
         # --- wifiModule ---
-        wifi_key = (self.modules or {}).get("wifiModule", "wifiModule_7")
+        wifi_key = (self.modules or {}).get("wifiModule", "wifiModule_9")
         dtm[wifi_key] = {
             "at": {
                 "rssi": {"value": self.wifi_rssi if self.wifi_rssi is not None else -55},
             }
+        }
+
+        # --- extCord ---
+        ext_key = (self.modules or {}).get("extCord", "extCord_4")
+        dtm[ext_key] = {
+            "at": {},
+            "metaData": {
+                "name": "Extension Cord",
+                "description": "Extension Cord Module",
+                "icon": "/img/profiles/extension_cord.png",
+            },
         }
 
         # --- parkAssistLaser ---

@@ -148,39 +148,43 @@ EOF
 bashio::log.info "Server config written to ${CONFIG_FILE}"
 
 # ---------------------------------------------------------------------------
-# Start the Ryobi local server
-# Listens on:
-#   - SERVER_PORT (e.g. 80) for LAN access / DNS-redirected HA integration
-#   - INGRESS_PORT for HA sidebar (state dashboard)
-# We run two instances: one on the main port, one on ingress port
+# Generate SSL certificate for TLS / HTTPS / WSS port 443
 # ---------------------------------------------------------------------------
+SSL_DIR="/data/ssl"
+mkdir -p "${SSL_DIR}"
 
-# Main server (LAN port — what tti.tiwiconnect.com DNS redirect points to)
-bashio::log.info "Starting Ryobi server on port ${SERVER_PORT}..."
+if [ ! -f "${SSL_DIR}/server.crt" ] || [ ! -f "${SSL_DIR}/server.key" ]; then
+    bashio::log.info "Generating self-signed TLS certificate for tti.tiwiconnect.com..."
+    openssl req -x509 -newkey rsa:2048 -nodes \
+        -keyout "${SSL_DIR}/server.key" \
+        -out "${SSL_DIR}/server.crt" \
+        -days 3650 \
+        -subj "/CN=tti.tiwiconnect.com" \
+        -addext "subjectAltName=DNS:tti.tiwiconnect.com,DNS:tti-prod2.thomisidae.com,IP:${HOST_IP}" || true
+fi
+
+# ---------------------------------------------------------------------------
+# Start the Ryobi local server (HTTP 80 + HTTPS 443 + Ingress 8099)
+# ---------------------------------------------------------------------------
+bashio::log.info "Starting Ryobi server on ports ${SERVER_PORT} (HTTP), 443 (HTTPS), and ${INGRESS_PORT} (Ingress)..."
+
 python3 -m server.main \
     --config "${CONFIG_FILE}" \
     --host 0.0.0.0 \
     --port "${SERVER_PORT}" \
+    --ssl-port 443 \
+    --ssl-cert "${SSL_DIR}/server.crt" \
+    --ssl-key "${SSL_DIR}/server.key" \
+    --ingress-port "${INGRESS_PORT}" \
     --log-level "$(echo ${LOG_LEVEL} | tr '[:lower:]' '[:upper:]')" &
 
 MAIN_PID=$!
-bashio::log.info "Main server started (PID: ${MAIN_PID})"
-
-# Ingress server (HA sidebar dashboard, different port)
-if [ "${SERVER_PORT}" != "${INGRESS_PORT}" ]; then
-    bashio::log.info "Starting ingress server on port ${INGRESS_PORT}..."
-    python3 -m server.main \
-        --config "${CONFIG_FILE}" \
-        --host 0.0.0.0 \
-        --port "${INGRESS_PORT}" \
-        --log-level "$(echo ${LOG_LEVEL} | tr '[:lower:]' '[:upper:]')" &
-    INGRESS_PID=$!
-    bashio::log.info "Ingress server started (PID: ${INGRESS_PID})"
-fi
+bashio::log.info "Ryobi local server started (PID: ${MAIN_PID})"
 
 bashio::log.info ""
 bashio::log.info "Ryobi GDO Local Server is running!"
-bashio::log.info "  API:     http://${HOST_IP}:${SERVER_PORT}/api/devices"
+bashio::log.info "  HTTP:    http://${HOST_IP}:${SERVER_PORT}/api/devices"
+bashio::log.info "  HTTPS:   https://${HOST_IP}:443/api/devices"
 bashio::log.info "  State:   http://${HOST_IP}:${SERVER_PORT}/state"
 bashio::log.info "  Health:  http://${HOST_IP}:${SERVER_PORT}/health"
 bashio::log.info ""

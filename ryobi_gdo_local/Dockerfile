@@ -8,7 +8,8 @@ RUN apk add --no-cache \
     dnsmasq \
     bash \
     curl \
-    jq
+    jq \
+    openssl
 
 # Install Python dependencies
 COPY server/requirements.txt /tmp/requirements.txt

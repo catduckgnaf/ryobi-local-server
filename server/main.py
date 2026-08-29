@@ -81,6 +81,28 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Bind port (default: 80; use 8080 if not running as root)",
     )
     parser.add_argument(
+        "--ssl-port",
+        type=int,
+        default=int(os.environ.get("SSL_PORT", "443")),
+        help="SSL bind port for HTTPS/WSS (default: 443)",
+    )
+    parser.add_argument(
+        "--ssl-cert",
+        default=os.environ.get("SSL_CERT", ""),
+        help="Path to SSL certificate file (PEM format)",
+    )
+    parser.add_argument(
+        "--ssl-key",
+        default=os.environ.get("SSL_KEY", ""),
+        help="Path to SSL private key file",
+    )
+    parser.add_argument(
+        "--ingress-port",
+        type=int,
+        default=int(os.environ.get("INGRESS_PORT", "0")),
+        help="Home Assistant Ingress port (e.g. 8099)",
+    )
+    parser.add_argument(
         "--log-level",
         default=os.environ.get("LOG_LEVEL", "INFO"),
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -100,28 +122,37 @@ async def _async_main(args: argparse.Namespace) -> None:
         )
         sys.exit(1)
 
-    LOGGER.info(
-        "Starting Ryobi local server on %s:%d (%d device(s))",
-        args.host,
-        args.port,
-        len(config["devices"]),
-    )
-
     app = await create_app(config)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, host=args.host, port=args.port)
-    await site.start()
 
-    LOGGER.info("Server running. Press Ctrl+C to stop.")
-    LOGGER.info("Endpoints:")
-    LOGGER.info("  POST  http://%s:%d/api/login", args.host, args.port)
-    LOGGER.info("  GET   http://%s:%d/api/devices", args.host, args.port)
-    LOGGER.info("  GET   http://%s:%d/api/devices/<id>", args.host, args.port)
-    LOGGER.info("  WS    ws://%s:%d/api/wsrpc", args.host, args.port)
-    LOGGER.info("  POST  http://%s:%d/state  (webhook)", args.host, args.port)
-    LOGGER.info("  GET   http://%s:%d/state  (debug)", args.host, args.port)
-    LOGGER.info("  GET   http://%s:%d/health", args.host, args.port)
+    # 1. Main HTTP Site (port 80)
+    site_http = web.TCPSite(runner, host=args.host, port=args.port)
+    await site_http.start()
+    LOGGER.info("HTTP Server running on %s:%d (%d device(s))", args.host, args.port, len(config["devices"]))
+
+    # 2. Main HTTPS / WSS Site (port 443) with TLS for physical GDO hardware
+    if args.ssl_cert and os.path.exists(args.ssl_cert) and args.ssl_key and os.path.exists(args.ssl_key):
+        try:
+            import ssl
+            ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            ssl_ctx.load_cert_chain(certfile=args.ssl_cert, keyfile=args.ssl_key)
+            site_https = web.TCPSite(runner, host=args.host, port=args.ssl_port, ssl_context=ssl_ctx)
+            await site_https.start()
+            LOGGER.info("HTTPS/WSS Server running on %s:%d (TLS active)", args.host, args.ssl_port)
+        except Exception as err:
+            LOGGER.error("Failed to start HTTPS listener on port %d: %s", args.ssl_port, err)
+
+    # 3. Ingress Site (HA sidebar dashboard on 8099)
+    if args.ingress_port and args.ingress_port not in (args.port, args.ssl_port):
+        try:
+            site_ingress = web.TCPSite(runner, host=args.host, port=args.ingress_port)
+            await site_ingress.start()
+            LOGGER.info("Ingress Server running on %s:%d", args.host, args.ingress_port)
+        except Exception as err:
+            LOGGER.error("Failed to start Ingress listener on port %d: %s", args.ingress_port, err)
+
+    LOGGER.info("Ryobi Local Server is fully initialized.")
 
     try:
         await asyncio.Event().wait()  # run forever
