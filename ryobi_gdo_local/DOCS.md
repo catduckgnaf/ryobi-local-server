@@ -59,28 +59,94 @@ curl -s "https://tti.tiwiconnect.com/api/devices" \
   | python3 -m json.tool | grep varName
 ```
 
-### 3. Set DNS redirect
+### 3. Choose your DNS Redirection Method
 
-Point your router's DNS to your Home Assistant machine's IP. This makes *all* devices on your network resolve `tti.tiwiconnect.com` locally.
+The physical Ryobi opener and Home Assistant look up `tti.tiwiconnect.com`. Choose **one** of the methods below to route traffic locally:
 
-**Router (recommended):** Set primary DNS = `<HA machine IP>` in your DHCP/DNS settings.
+---
 
-**Just the HA machine** (simpler, works for integration-only use): The add-on automatically configures its own DNS inside the container — the ryobi_gdo integration on the same HA instance will use the local server without any router changes.
+#### 🌟 Option 1: No Advanced Router Required — Set Home Assistant as Network DNS (Easiest UI)
+The add-on has a built-in DNS forwarder (`dnsmasq`) running on port 53:
+1. In your standard ISP router's DHCP / LAN settings, set **Primary DNS Server** to your Home Assistant IP (e.g. `192.168.1.50`).
+2. The add-on will answer normal internet DNS requests through Cloudflare (`1.1.1.1`) and Google (`8.8.8.8`) while automatically intercepting `tti.tiwiconnect.com` and pointing it to Home Assistant.
+3. **No custom firewall rules or router flashing needed.**
+
+---
+
+#### 🛡️ Option 2: AdGuard Home or Pi-hole (Zero Router Tweaks)
+If you run AdGuard Home or Pi-hole (standalone or via Home Assistant add-on):
+* **AdGuard Home**: Go to **Filters → DNS rewrites → Add DNS rewrite**:
+  * Domain: `tti.tiwiconnect.com`
+  * Answer: `<Home Assistant IP>`
+* **Pi-hole**: Go to **Local DNS → DNS Records → Add**:
+  * Domain: `tti.tiwiconnect.com`
+  * IP Address: `<Home Assistant IP>`
+
+---
+
+#### 🌐 Option 3: UniFi Dream Machine (UDM-Pro / SE / UCG / Gateway)
+* **Via UniFi Web UI**:
+  1. Navigate to **Settings → Routing → DNS**.
+  2. Click **Add Static DNS Entry**.
+  3. Set Domain Name: `tti.tiwiconnect.com`
+  4. Set IP Address: `<Home Assistant LAN IP>`
+* **Via SSH / Persistent Script**:
+  ```sh
+  cat << 'EOF' > /data/udapi-config/ryobi-dns.sh
+  #!/bin/sh
+  echo 'address=/tti.tiwiconnect.com/<HA_IP>' > /run/dnsmasq.dhcp.conf.d/ryobi_dns.conf
+  echo 'address=/tti.tiwiconnect.com/<HA_IP>' >> /run/dnsmasq.dns.conf.d/main.conf
+  killall -HUP dnsmasq || true
+  EOF
+  chmod +x /data/udapi-config/ryobi-dns.sh
+  /data/udapi-config/ryobi-dns.sh
+  ```
+
+---
+
+#### 🔒 Option 4: pfSense / OPNsense
+1. Go to **Services → DNS Resolver → General Settings**.
+2. Scroll to **Host Overrides** and click **Add**.
+3. Set:
+   * **Host**: `tti`
+   * **Domain**: `tiwiconnect.com`
+   * **IP Address**: `<Home Assistant IP>`
+4. Save and Apply Changes.
+
+---
+
+#### 📡 Option 5: OpenWrt
+1. Go to **Network → DHCP and DNS → General Settings**.
+2. Under **Addresses**, enter:
+   ```
+   /tti.tiwiconnect.com/<Home Assistant IP>
+   ```
+3. Click **Save & Apply**.
+
+---
+
+#### 📶 Option 6: Dedicated Home Assistant Wi-Fi Access Point (100% Router-Free)
+If you have a Wi-Fi adapter or Raspberry Pi running Home Assistant:
+1. Install the **Access Point** add-on in Home Assistant.
+2. Broadcast a dedicated SSID (e.g. `Ryobi-Garage-WiFi`).
+3. Pair the Ryobi opener directly to that SSID. Home Assistant handles DNS and DHCP directly.
+
+---
 
 ### 4. Start the add-on
 
-Start it — check the **Log** tab for:
+Start the add-on and verify in the **Log** tab:
 ```
-DNS redirect active: tti.tiwiconnect.com -> 192.168.1.x
-Ryobi GDO Local Server is running!
-  API:     http://192.168.1.x:80/api/devices
-  State:   http://192.168.1.x:80/state
-  Health:  http://192.168.1.x:80/health
+[INFO] Generating self-signed TLS certificate for tti.tiwiconnect.com...
+[INFO] HTTP Server running on 0.0.0.0:80
+[INFO] HTTPS/WSS Server running on 0.0.0.0:443 (TLS active)
+[INFO] Ingress Server running on 0.0.0.0:8099
+[INFO] Ryobi Local Server is fully initialized.
 ```
 
 ### 5. Open HA sidebar
 
-Click **Ryobi GDO** in the sidebar — you'll see the live dashboard with current door state.
+Click **Ryobi GDO** in the Home Assistant sidebar to monitor real-time door status, battery level, WiFi RSSI, and accessory controls.
 
 ---
 

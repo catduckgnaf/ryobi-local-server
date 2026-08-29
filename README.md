@@ -95,54 +95,56 @@ Your `device_id` is the `varName` Ryobi uses — looks like `GDO_XXXXXXXXXX`. Fi
 
 ## DNS Redirect Setup
 
-The key step: make `tti.tiwiconnect.com` resolve to your local server instead of the real Ryobi cloud.
+The key step is making `tti.tiwiconnect.com` resolve to your local server instead of the real Ryobi cloud. Choose the method that best matches your network:
 
-### Option 1: Pi-hole / AdGuard Home (recommended)
+### 🌟 Method 1: Standard Router / DHCP (No Custom Router Flashing)
+The add-on contains a built-in DNS forwarder (`dnsmasq`) on port 53.
+* In your router's DHCP / LAN settings, set **Primary DNS** to your Home Assistant machine's IP (e.g. `192.168.1.50`).
+* Normal web traffic is resolved through Cloudflare (`1.1.1.1`) and Google (`8.8.8.8`), while `tti.tiwiconnect.com` is automatically caught and pointed to Home Assistant.
 
-Add a **Local DNS** record:
+### 🛡️ Method 2: Pi-hole or AdGuard Home
+* **Pi-hole**: Navigate to **Local DNS → DNS Records → Add**:
+  * Domain: `tti.tiwiconnect.com`
+  * IP Address: `<Server IP>`
+* **AdGuard Home**: Navigate to **Filters → DNS rewrites → Add DNS rewrite**:
+  * Domain: `tti.tiwiconnect.com`
+  * Answer: `<Server IP>`
 
-```
-Domain:  tti.tiwiconnect.com
-Answer:  <IP of your server>   e.g. 192.168.1.100
-```
+### 🌐 Method 3: Ubiquiti UniFi (UDM-Pro / UDM-SE / UCG / Gateway)
+* **Via UniFi Controller UI**:
+  1. Open **Settings → Routing → DNS**.
+  2. Click **Add Static DNS Entry**.
+  3. Domain: `tti.tiwiconnect.com`
+  4. IP Address: `<Server IP>`
+* **Via SSH / Persistent Service**:
+  ```sh
+  cat << 'EOF' > /data/udapi-config/ryobi-dns.sh
+  #!/bin/sh
+  echo 'address=/tti.tiwiconnect.com/<SERVER_IP>' > /run/dnsmasq.dhcp.conf.d/ryobi_dns.conf
+  echo 'address=/tti.tiwiconnect.com/<SERVER_IP>' >> /run/dnsmasq.dns.conf.d/main.conf
+  killall -HUP dnsmasq || true
+  EOF
+  chmod +x /data/udapi-config/ryobi-dns.sh
+  /data/udapi-config/ryobi-dns.sh
+  ```
 
-In Pi-hole: **Local DNS → DNS Records → Add**  
-In AdGuard: **Filters → DNS rewrites → Add DNS rewrite**
+### 🔒 Method 4: pfSense / OPNsense
+1. Go to **Services → DNS Resolver → General Settings**.
+2. Under **Host Overrides**, click **Add**.
+3. Set **Host**: `tti`, **Domain**: `tiwiconnect.com`, **IP Address**: `<Server IP>`.
+4. Click **Save** and **Apply Changes**.
 
-### Option 2: dnsmasq (e.g. on your router)
+### 📡 Method 5: OpenWrt / DD-WRT
+* In OpenWrt: **Network → DHCP and DNS → General Settings → Addresses**:
+  `/tti.tiwiconnect.com/<Server IP>`
+* In DD-WRT: **Services → Services → Additional DNS Options**:
+  `address=/tti.tiwiconnect.com/<Server IP>`
 
-Add to `/etc/dnsmasq.conf` (or `/etc/dnsmasq.d/ryobi.conf`):
-```
-address=/tti.tiwiconnect.com/192.168.1.100
-```
-
-### Option 3: `/etc/hosts` on the HA machine only
-
-Add to `/etc/hosts` on your Home Assistant server:
-```
-192.168.1.100   tti.tiwiconnect.com
-```
-
-> **Note:** Port matters. If the integration connects to port 443 (HTTPS/WSS), you'll need a TLS-terminating reverse proxy (nginx/Caddy) in front of this server. If you can point the HA integration at `http://` instead, port 80 works directly without TLS.
-
-### Option 4: Reverse proxy + self-signed cert (for HTTPS/WSS)
-
-If the integration requires HTTPS, use nginx or Caddy to terminate TLS with a self-signed cert:
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name tti.tiwiconnect.com;
-    ssl_certificate     /etc/ssl/certs/ryobi-local.crt;
-    ssl_certificate_key /etc/ssl/private/ryobi-local.key;
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-```
+### 📶 Method 6: Dedicated Home Assistant Wi-Fi AP (100% Router-Free)
+If you have a Wi-Fi dongle or Raspberry Pi running Home Assistant:
+1. Install the **Access Point** add-on in Home Assistant.
+2. Broadcast a dedicated SSID (e.g. `Ryobi-Garage-WiFi`).
+3. Pair the Ryobi opener directly to that SSID — Home Assistant handles DNS and DHCP directly without touching your home router.
 
 ---
 
