@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ryobi-local-server"
-version = "0.1.0"
+version = "1.1.0"
 description = "Local TiwiConnect emulator for Ryobi GDO — replaces Ryobi's cloud on your LAN"
 readme = "README.md"
 license = { text = "MIT" }
