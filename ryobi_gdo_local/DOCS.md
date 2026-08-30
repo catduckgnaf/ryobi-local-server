@@ -1,13 +1,12 @@
 # Ryobi GDO Local Server — Home Assistant Add-on
 
-Fully local TiwiConnect emulator for the Ryobi GD200 garage door opener.
+Fully local TiwiConnect emulator for Ryobi GDO125 and GD200 garage door openers.
 
 - ✅ Runs a complete Ryobi cloud API server on your Home Assistant machine  
 - ✅ Built-in DNS server (`dnsmasq`) auto-redirects `tti.tiwiconnect.com` to local  
 - ✅ **Zero internet required** — works even if Ryobi's cloud is completely dead  
-- ✅ Real-time dashboard in the HA sidebar  
-- ✅ Webhook endpoint for reed switch / tilt sensor state pushes  
-- ✅ Outgoing command webhook to trigger a physical relay (Pi/ESP) when HA opens the door  
+- ✅ Real-time dashboard in the HA sidebar
+- ✅ Outgoing command webhook to trigger a physical relay (Pi/ESP) when HA opens the door
 
 ---
 
@@ -23,7 +22,6 @@ Ryobi GDO Local Server (this addon, port 80)
     ├── /api/login      ← returns local API key
     ├── /api/devices    ← returns your device from config
     ├── /api/wsrpc (WS) ← real-time push + command handling
-    ├── /state  (POST)  ← reed switch / sensor pushes real door state
     └── /       (GET)   ← live dashboard (HA sidebar)
 ```
 
@@ -150,36 +148,9 @@ Click **Ryobi GDO** in the Home Assistant sidebar to monitor real-time door stat
 
 ---
 
-## Pushing Real State (Reed Switch / Tilt Sensor)
+## Open Work
 
-The addon can't magically know if the door is actually open or closed without a sensor. Push state from your hardware:
-
-```bash
-# Door opened (reed switch triggered open)
-curl -X POST http://homeassistant.local/state \
-  -H "Content-Type: application/json" \
-  -d '{"device_id": "GDO_XXXXXXXXXX", "door_state": "1"}'
-
-# Door closed
-curl -X POST http://homeassistant.local/state \
-  -H "Content-Type: application/json" \
-  -d '{"device_id": "GDO_XXXXXXXXXX", "door_state": "0"}'
-```
-
-See [`examples/esphome_ryobi.yaml`](../../examples/esphome_ryobi.yaml) for a complete ESPHome config.
-
----
-
-## State Fields
-
-| Field | Type | Values |
-|---|---|---|
-| `door_state` | string | `"0"` closed · `"1"` open · `"2"` closing · `"3"` opening |
-| `light_state` | bool | `true` / `false` |
-| `battery_level` | int | 0–100% |
-| `wifi_rssi` | int | dBm e.g. `-65` |
-| `safety` | bool | `true` = sensor blocked |
-| `motion` | bool | motion detected |
+Camera support is still a TODO. Firmware and camera-protocol inspection is ongoing. If you have relevant Ryobi firmware, protocol documentation, or useful captures, please open an issue with the details you can share.
 
 ---
 

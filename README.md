@@ -4,6 +4,32 @@
 
 Addresses [issue #65](https://github.com/catduckgnaf/ryobi_gdo/issues/65) — _"Control the GD200 directly via LAN, bypassing the app completely."_
 
+**Compatible hardware:** Ryobi GDO125 and GD200 garage-door openers.
+
+---
+
+## Quick Start
+
+### Home Assistant add-on
+
+[![Add the Ryobi GDO Local Server repository to your Home Assistant instance](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fcatduckgnaf%2Fryobi-local-server)
+
+Click the button to open Home Assistant's **Add-on repository** dialog with this repository pre-filled. Select **Add**, then install **Ryobi GDO Local Server** from the add-on store.
+
+The add-on does not need a separate `dnsmasq` installation or DNS sidecar. Its built-in DNS service handles the `tti.tiwiconnect.com` redirect when `dns_enabled` is enabled.
+
+### Docker Compose
+
+```bash
+git clone https://github.com/catduckgnaf/ryobi-local-server
+cd ryobi-local-server
+cp config/config.yaml.example config/config.yaml
+# Edit config/config.yaml, then:
+docker compose up -d
+```
+
+The standalone Docker image requires an external DNS rewrite or a separate `dnsmasq` sidecar. See [Docker Compose: DNS, HTTPS, and cloud polling](#docker-compose-dns-https-and-cloud-polling) before enabling it.
+
 ---
 
 ## How it Works
@@ -30,7 +56,6 @@ ryobi-local-server  (your machine, port 80)
     └── /api/wsrpc (WS)    ← real-time commands + push updates
     │
     ├── /state (GET)        ← debug: view current state
-    ├── /state (POST)       ← webhook: push real state in
     └── /health             ← liveness check
     │
     └── [optional] polls real Ryobi cloud every 30s
@@ -39,34 +64,70 @@ ryobi-local-server  (your machine, port 80)
 
 ---
 
-## Quick Start
+## Docker Compose: DNS, HTTPS, and cloud polling
 
-[![Add the Ryobi GDO Local Server repository to your Home Assistant instance](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fcatduckgnaf%2Fryobi-local-server)
+The standalone Docker image is not equivalent to the Home Assistant add-on:
 
-Click the button to open Home Assistant's **Add-on repository** dialog with this repository pre-filled. Select **Add**, then install **Ryobi GDO Local Server** from the add-on store.
+- The add-on includes and starts `dnsmasq` for the LAN DNS redirect.
+- The standalone Docker image does **not** include `dnsmasq`.
+- The standalone Docker Compose example serves HTTP on host port `80` via container port `8080`.
+- The standalone Docker image does not start an HTTPS listener on host port `443` unless you provide a certificate and pass the SSL arguments to `server.main`.
 
-### Option A: Python (direct)
+The local server replaces `tti.tiwiconnect.com`. Docker Compose does not provide that DNS redirect by itself. Use one of these approaches:
 
-```bash
-git clone https://github.com/catduckgnaf/ryobi-local-server
-cd ryobi-local-server
+- Use an existing Pi-hole, AdGuard Home, UniFi, pfSense, or OpenWrt DNS rewrite.
+- Run a separate `dnsmasq` sidecar on Linux with host networking and host port 53.
+- Build `dnsmasq` into a custom image and supervise it separately from the Python process.
 
-pip install -e .
+For a DNS sidecar, the rewrite must point to the **Docker host's LAN IP**, not the container IP:
 
-cp config/config.yaml.example config/config.yaml
-# Edit config/config.yaml with your device_id and credentials
-
-# Run on port 8080 (no root required)
-python -m server.main --port 8080
+```conf
+no-resolv
+server=1.1.1.1
+server=8.8.8.8
+address=/tti.tiwiconnect.com/DOCKER_HOST_LAN_IP
+listen-address=0.0.0.0
+bind-interfaces
 ```
 
-### Option B: Docker Compose (recommended)
+The DNS service must be reachable on both UDP and TCP port 53. On Linux, a Compose sidecar can use `network_mode: host`; verify that another service is not already using port 53. Docker Desktop on macOS and Windows has different host-network behavior and should use an external DNS service instead.
+
+The HA integration connects to `https://tti.tiwiconnect.com` on port 443. A Docker deployment therefore also needs either:
+
+- A TLS reverse proxy on host port 443 that forwards to the local server and supports WebSockets; or
+- The local server's optional SSL listener, with a certificate for `tti.tiwiconnect.com` and an explicit `--ssl-port`, `--ssl-cert`, and `--ssl-key` configuration.
+
+If HA logs show `TLSV1_UNRECOGNIZED_NAME`, `wrong version number`, or a connection failure on port 443, check DNS and TLS routing first. The usual cause is that `tti.tiwiconnect.com` resolves to the local Docker host, but port 443 is not serving a TLS endpoint for that hostname. This is not normally a bad Ryobi password.
+
+#### Cloud polling and split DNS
+
+For local-only operation, leave cloud polling disabled:
+
+```yaml
+cloud_poll: false
+```
+
+If `cloud_poll: true`, the Ryobi application container must resolve `tti.tiwiconnect.com` to Ryobi's public service while Home Assistant and the GDO resolve it to the local server. Do not point the application container at the local DNS rewrite. In Compose, configure public DNS for the application container only when the network permits direct public DNS resolution:
+
+```yaml
+services:
+  ryobi-local-server:
+    # ...existing settings...
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+```
+
+If the router forcibly intercepts all DNS queries, use a resolver that provides split-DNS views or leave `cloud_poll` disabled. A single global rewrite sends the cloud proxy back to the local emulator and creates a DNS/TLS loop.
+
+After deployment, verify both paths separately:
 
 ```bash
-cp config/config.yaml.example config/config.yaml
-# Edit config/config.yaml
+# From the application container: should resolve the public Ryobi service
+docker compose exec ryobi-local-server getent hosts tti.tiwiconnect.com
 
-docker compose up -d
+# From a LAN client using the local DNS service: should resolve to DOCKER_HOST_LAN_IP
+dig @DOCKER_HOST_LAN_IP tti.tiwiconnect.com
 ```
 
 ---
@@ -152,52 +213,6 @@ If you have a Wi-Fi dongle or Raspberry Pi running Home Assistant:
 
 ---
 
-## Webhook: Push Real State In
-
-Have a reed switch, tilt sensor, or ESP running ESPHome? Push real door state to the server:
-
-```bash
-# Door opened
-curl -X POST http://192.168.1.100/state \
-  -H "Content-Type: application/json" \
-  -d '{"device_id": "GDO_XXXXXXXXXX", "door_state": "1"}'
-
-# Door closed
-curl -X POST http://192.168.1.100/state \
-  -H "Content-Type: application/json" \
-  -d '{"device_id": "GDO_XXXXXXXXXX", "door_state": "0"}'
-
-# Multiple fields at once
-curl -X POST http://192.168.1.100/state \
-  -H "Content-Type: application/json" \
-  -d '{
-    "device_id": "GDO_XXXXXXXXXX",
-    "door_state": "0",
-    "light_state": false,
-    "battery_level": 85,
-    "wifi_rssi": -62
-  }'
-```
-
-### State field reference
-
-| Field | Type | Values |
-|---|---|---|
-| `door_state` | string | `"0"` closed, `"1"` open, `"2"` closing, `"3"` opening, `"4"` fault |
-| `light_state` | bool | `true` / `false` |
-| `battery_level` | int | `0`–`100` (percent) |
-| `wifi_rssi` | int | e.g. `-65` (dBm) |
-| `safety` | bool | `true` = safety sensor blocked |
-| `motion` | bool | motion sensor triggered |
-| `vacation_mode` | bool | vacation mode enabled |
-| `park_assist` | bool | park assist laser enabled |
-| `inflator` | bool | inflator module on |
-| `bt_speaker` | bool | bluetooth speaker on |
-
-The server immediately **pushes a WebSocket update** to all connected HA clients when state changes, so entities update in real-time.
-
----
-
 ## Debug Endpoints
 
 ```bash
@@ -233,6 +248,12 @@ server/
 ├── models.py       # GarageDoorState dataclass + Ryobi JSON response builders
 └── ryobi_proxy.py  # Optional: background task that polls real Ryobi cloud
 ```
+
+---
+
+## Open Work
+
+Camera support is still a TODO. Firmware and camera-protocol inspection is ongoing. If you have relevant Ryobi firmware, protocol documentation, or useful captures, please open an issue with the details you can share.
 
 ---
 
