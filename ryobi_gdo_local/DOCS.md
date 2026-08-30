@@ -1,6 +1,6 @@
 # Ryobi GDO Local Server — Home Assistant Add-on
 
-Fully local TiwiConnect emulator for Ryobi GDO125 and GD200 garage door openers.
+Fully local TiwiConnect emulator for Ryobi GDO125, GDO201, and GD200 garage door openers.
 
 - ✅ Runs a complete Ryobi cloud API server on your Home Assistant machine  
 - ✅ Built-in DNS server (`dnsmasq`) auto-redirects `tti.tiwiconnect.com` to local  

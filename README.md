@@ -4,7 +4,7 @@
 
 Addresses [issue #65](https://github.com/catduckgnaf/ryobi_gdo/issues/65) — _"Control the GD200 directly via LAN, bypassing the app completely."_
 
-**Compatible hardware:** Ryobi GDO125 and GD200 garage-door openers.
+**Compatible hardware:** Ryobi GDO125, GDO201, and GD200 garage-door openers.
 
 ---
 
@@ -34,7 +34,7 @@ The standalone Docker image requires an external DNS rewrite or a separate `dnsm
 
 ## How it Works
 
-The Ryobi GD200 and the HA integration both communicate exclusively with `tti.tiwiconnect.com` via:
+The Ryobi GDO125, GDO201, and GD200 devices and the HA integration communicate exclusively with `tti.tiwiconnect.com` via:
 
 | Protocol | Endpoint | Purpose |
 |---|---|---|
@@ -265,7 +265,8 @@ A: No. Just redirect DNS. The integration talks to `tti.tiwiconnect.com` — you
 **Q: What happens if Ryobi's cloud is down?**  
 A: Nothing changes — your local server keeps running with last-known state. If `cloud_poll: true`, it keeps retrying and will sync again when the cloud recovers.
 
-**Q: Does this work with the GD200 hardware communicating to the cloud?**  
+**Q: Does this work with GDO125, GDO201, and GD200 hardware communicating to the cloud?**
+
 A: The GDO hardware itself still connects out to Ryobi's cloud — we can't change its firmware. This server intercepts **HA's** connection to the cloud, not the device's. For hardware-level LAN control, you'd need a hardware relay + reed switch (completely different approach).
 
 **Q: Is this secure?**  
