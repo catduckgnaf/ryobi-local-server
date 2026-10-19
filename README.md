@@ -1,281 +1,158 @@
 # ryobi-local-server
 
-> **Local LAN emulator for the Ryobi GDO cloud API** — replaces `tti.tiwiconnect.com` on your network so the [ryobi_gdo](https://github.com/catduckgnaf/ryobi_gdo) Home Assistant integration works even when Ryobi's servers are down.
+A local stand-in for Ryobi's cloud API (`tti.tiwiconnect.com`) so the [ryobi_gdo](https://github.com/catduckgnaf/ryobi_gdo) Home Assistant integration keeps working on your LAN when Ryobi's servers don't. Works with the GDO125, GDO201, and GD200.
 
-Addresses [issue #65](https://github.com/catduckgnaf/ryobi_gdo/issues/65) — _"Control the GD200 directly via LAN, bypassing the app completely."_
+Addresses [ryobi_gdo#65](https://github.com/catduckgnaf/ryobi_gdo/issues/65).
 
-**Compatible hardware:** Ryobi GDO125, GDO201, and GD200 garage-door openers.
+## Read this first: you probably don't need DNS
 
----
+The ryobi_gdo integration has a **Server** field (called Host in older versions). Point it at this server's IP and Home Assistant talks to it directly over plain HTTP. No router changes, no Pi-hole rewrites, no certificates.
 
-## Quick Start
+DNS redirection is only needed for the experimental mode where the **opener itself** is tricked into talking to this server. That lives in [docs/DNS.md](docs/DNS.md), away from everyone who doesn't need it.
 
-### Home Assistant add-on
+## What actually moves the door
 
-[![Add the Ryobi GDO Local Server repository to your Home Assistant instance](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fcatduckgnaf%2Fryobi-local-server)
+The server holds the door's state and answers Home Assistant. Something still has to move the real door and report whether it's open. Pick one:
 
-Click the button to open Home Assistant's **Add-on repository** dialog with this repository pre-filled. Select **Add**, then install **Ryobi GDO Local Server** from the add-on store.
+| Option | What you need | Status |
+|---|---|---|
+| ESP or Pi relay | An ESP8266/ESP32 with a relay on the wall button terminals and a reed switch. The server POSTs commands to it; it POSTs state back. See [examples/esphome_ryobi.yaml](examples/esphome_ryobi.yaml). | Works, fully offline |
+| Opener connects directly | DNS redirect plus HTTPS, see [docs/DNS.md](docs/DNS.md). Depends on the opener accepting a self-signed certificate. | Experimental |
+| Cloud polling (Docker only) | Ryobi credentials and internet. Mirrors state from Ryobi's cloud; read only. | Works while the cloud does |
 
-The add-on does not need a separate `dnsmasq` installation or DNS sidecar. Its built-in DNS service handles the `tti.tiwiconnect.com` redirect when `dns_enabled` is enabled.
+Without any of these, you get a nice dashboard of a door that isn't connected to anything.
 
-### Docker Compose
+## Install: Home Assistant add-on
+
+[![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fcatduckgnaf%2Fryobi-local-server)
+
+1. Click the button, select **Add**, then install **Ryobi GDO Local Server**.
+2. On the **Configuration** tab set `device_id` ([how to find it](#finding-your-device-id)). Start the add-on.
+3. The **Log** tab prints the exact value to use, for example:
+   ```
+   In the Ryobi integration, set Server to:  http://192.168.1.50
+   ```
+4. [Point the integration at it](#connect-the-integration).
+
+Full add-on docs: [ryobi_gdo_local/DOCS.md](ryobi_gdo_local/DOCS.md).
+
+## Install: Docker (Unraid, Synology, any Linux box)
 
 ```bash
 git clone https://github.com/catduckgnaf/ryobi-local-server
 cd ryobi-local-server
-cp config/config.yaml.example config/config.yaml
-# Edit config/config.yaml, then:
+cp .env.example .env      # set RYOBI_DEVICE_ID, that's it
 docker compose up -d
+curl http://localhost:8080/health   # {"status": "ok"}
 ```
 
-The standalone Docker image requires an external DNS rewrite or a separate `dnsmasq` sidecar. See [Docker Compose: DNS, HTTPS, and cloud polling](#docker-compose-dns-https-and-cloud-polling) before enabling it.
+Then set the integration's Server field to `http://<docker-host-ip>:8080`.
 
----
+Compose pulls `ghcr.io/catduckgnaf/ryobi-local-server:latest` (amd64 and arm64) and falls back to building locally if the image isn't available.
 
-## How it Works
+**Unraid:** install the *Docker Compose Manager* plugin and use the compose file above, or add a container by hand:
 
-The Ryobi GDO125, GDO201, and GD200 devices and the HA integration communicate exclusively with `tti.tiwiconnect.com` via:
+| Field | Value |
+|---|---|
+| Repository | `ghcr.io/catduckgnaf/ryobi-local-server:latest` |
+| Network | Bridge |
+| Port | Host `8080` to container `8080` |
+| Path | `/mnt/user/appdata/ryobi-local-server` to `/data` |
+| Variable | `RYOBI_DEVICE_ID` = your device ID |
+| Extra Parameters | `--user 99:100` (so it can write to appdata) |
 
-| Protocol | Endpoint | Purpose |
+### Docker settings
+
+Everything for one door can be set with environment variables (see [.env.example](.env.example)):
+
+| Variable | Default | Purpose |
 |---|---|---|
-| HTTPS | `POST /api/login` | Get API key |
-| HTTPS | `GET /api/devices` | List devices |
-| HTTPS | `GET /api/devices/<id>` | Device detail + state |
-| WSS | `/api/wsrpc` | Real-time push/commands |
+| `RYOBI_DEVICE_ID` | none, required | Opener varName |
+| `RYOBI_DEVICE_NAME` | `Ryobi GDO` | Friendly name |
+| `RYOBI_USERNAME` / `RYOBI_PASSWORD` | empty | If set, HA must log in with exactly these. Also used for cloud polling. |
+| `RYOBI_CLOUD_POLL` | `false` | Mirror state from Ryobi's cloud |
+| `RYOBI_POLL_INTERVAL` | `30` | Seconds between cloud polls |
+| `RYOBI_COMMAND_WEBHOOK_URL` | empty | Where to POST open/close/light commands |
+| `RYOBI_ENFORCE_TOKEN` | `false` | Reject websocket clients without a valid token |
+| `SSL_ENABLED` | `false` | Serve HTTPS on 8443 (DNS redirect mode only) |
+| `LOG_LEVEL` | `INFO` | `DEBUG` when things get weird |
 
-This server **fully reimplements those four endpoints** locally. You redirect DNS for `tti.tiwiconnect.com` to your server's local IP, and all traffic stays on your LAN. Ryobi's cloud becomes optional.
+For multiple doors or custom module lists, copy `config/config.yaml.example` to `config/config.yaml`. It's mounted at `/config` and environment variables override it.
 
-```
-Home Assistant
-    │  HTTP + WSS
-    ▼
-ryobi-local-server  (your machine, port 80)
-    ├── /api/login          ← returns a local API key
-    ├── /api/devices        ← returns device list from memory
-    ├── /api/devices/<id>   ← returns full deviceTypeMap
-    └── /api/wsrpc (WS)    ← real-time commands + push updates
-    │
-    ├── /state (GET)        ← debug: view current state
-    └── /health             ← liveness check
-    │
-    └── [optional] polls real Ryobi cloud every 30s
-        to keep state current (graceful degradation)
-```
+## Connect the integration
 
----
+**New install:** Settings → Devices & services → Add integration → Ryobi GDO. Enter any username and password (unless you set `RYOBI_USERNAME`/`RYOBI_PASSWORD`), and put the server address in **Server**.
 
-## Docker Compose: DNS, HTTPS, and cloud polling
+**Existing install:** Settings → Devices & services → Ryobi GDO → **Configure** (or ⋮ → **Reconfigure**), change **Server**. The integration reloads on its own.
 
-The standalone Docker image is not equivalent to the Home Assistant add-on:
+| Where the server runs | Server value |
+|---|---|
+| HA add-on, default port | `http://192.168.1.50` |
+| Docker on another box | `http://192.168.1.20:8080` |
 
-- The add-on includes and starts `dnsmasq` for the LAN DNS redirect.
-- The standalone Docker image does **not** include `dnsmasq`.
-- The standalone Docker Compose example serves HTTP on host port `80` via container port `8080`.
-- The standalone Docker image does not start an HTTPS listener on host port `443` unless you provide a certificate and pass the SSL arguments to `server.main`.
+Use the IP, not a hostname, and include `http://`. Without a scheme the integration guesses HTTP only for IPs and `host:port`; anything else gets HTTPS and fails.
 
-The local server replaces `tti.tiwiconnect.com`. Docker Compose does not provide that DNS redirect by itself. Use one of these approaches:
+## Finding your device ID
 
-- Use an existing Pi-hole, AdGuard Home, UniFi, pfSense, or OpenWrt DNS rewrite.
-- Run a separate `dnsmasq` sidecar on Linux with host networking and host port 53.
-- Build `dnsmasq` into a custom image and supervise it separately from the Python process.
-
-For a DNS sidecar, the rewrite must point to the **Docker host's LAN IP**, not the container IP:
-
-```conf
-no-resolv
-server=1.1.1.1
-server=8.8.8.8
-address=/tti.tiwiconnect.com/DOCKER_HOST_LAN_IP
-listen-address=0.0.0.0
-bind-interfaces
-```
-
-The DNS service must be reachable on both UDP and TCP port 53. On Linux, a Compose sidecar can use `network_mode: host`; verify that another service is not already using port 53. Docker Desktop on macOS and Windows has different host-network behavior and should use an external DNS service instead.
-
-The HA integration connects to `https://tti.tiwiconnect.com` on port 443. A Docker deployment therefore also needs either:
-
-- A TLS reverse proxy on host port 443 that forwards to the local server and supports WebSockets; or
-- The local server's optional SSL listener, with a certificate for `tti.tiwiconnect.com` and an explicit `--ssl-port`, `--ssl-cert`, and `--ssl-key` configuration.
-
-If HA logs show `TLSV1_UNRECOGNIZED_NAME`, `wrong version number`, or a connection failure on port 443, check DNS and TLS routing first. The usual cause is that `tti.tiwiconnect.com` resolves to the local Docker host, but port 443 is not serving a TLS endpoint for that hostname. This is not normally a bad Ryobi password.
-
-#### Cloud polling and split DNS
-
-For local-only operation, leave cloud polling disabled:
-
-```yaml
-cloud_poll: false
-```
-
-If `cloud_poll: true`, the Ryobi application container must resolve `tti.tiwiconnect.com` to Ryobi's public service while Home Assistant and the GDO resolve it to the local server. Do not point the application container at the local DNS rewrite. In Compose, configure public DNS for the application container only when the network permits direct public DNS resolution:
-
-```yaml
-services:
-  ryobi-local-server:
-    # ...existing settings...
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
-```
-
-If the router forcibly intercepts all DNS queries, use a resolver that provides split-DNS views or leave `cloud_poll` disabled. A single global rewrite sends the cloud proxy back to the local emulator and creates a DNS/TLS loop.
-
-After deployment, verify both paths separately:
+The device ID is Ryobi's `varName` for your opener. The integration shows it in a dropdown during setup, or ask Ryobi's API directly from any machine with curl:
 
 ```bash
-# From the application container: should resolve the public Ryobi service
-docker compose exec ryobi-local-server getent hosts tti.tiwiconnect.com
-
-# From a LAN client using the local DNS service: should resolve to DOCKER_HOST_LAN_IP
-dig @DOCKER_HOST_LAN_IP tti.tiwiconnect.com
+curl -s -X GET https://tti.tiwiconnect.com/api/devices \
+  --data-urlencode "username=you@example.com" \
+  --data-urlencode "password=yourpassword" \
+  | grep -o '"varName": *"[^"]*"'
 ```
 
----
+Do this while Ryobi's cloud still works. Write it down. Future you will be grateful.
 
-## Configuration
+## Troubleshooting
 
-Edit `config/config.yaml` (see [`config/config.yaml.example`](config/config.yaml.example) for all options):
+| Symptom | Likely cause |
+|---|---|
+| Integration says cannot connect | Wrong Server value. Open `http://<ip>:<port>/health` in a browser from another device. If that fails, it's the network or firewall, not the integration. |
+| `TLSV1_UNRECOGNIZED_NAME`, `certificate verify failed`, `wrong version number` | Server has no `http://` (so it tried HTTPS), or you left it at `tti.tiwiconnect.com` with a DNS redirect. Set it to `http://<ip>`. |
+| Login rejected (401) | You set `RYOBI_USERNAME`/`RYOBI_PASSWORD` and HA is using different ones. |
+| Door state never changes | Nothing is reporting real state. See [What actually moves the door](#what-actually-moves-the-door). |
+| `Failed to persist state` in logs | `/data` isn't writable. On Unraid add `--user 99:100`. |
+| Add-on log: `dnsmasq failed to start` | Port 53 is taken, usually by the AdGuard or Pi-hole add-on. Turn off `dns_enabled` (you likely don't need it). |
 
-```yaml
-username: "your_ryobi_email@example.com"   # optional, used for cloud polling
-password: "your_ryobi_password"             # optional
-
-devices:
-  - device_id: "GDO_XXXXXXXXXX"  # your Ryobi device varName
-    name: "Garage Door"
-
-cloud_poll: true      # poll real Ryobi cloud every 30s for live state
-poll_interval: 30
-enforce_token: false  # set true in production
-```
-
-### Finding your device_id
-
-Your `device_id` is the `varName` Ryobi uses — looks like `GDO_XXXXXXXXXX`. Find it by:
-
-1. **From HA integration**: Check the existing ryobi_gdo integration config entry
-2. **From the real API**: `curl "https://tti.tiwiconnect.com/api/devices" --data "username=you@email.com&password=yourpass" | python3 -m json.tool | grep varName`
-
----
-
-## DNS Redirect Setup
-
-The key step is making `tti.tiwiconnect.com` resolve to your local server instead of the real Ryobi cloud. Choose the method that best matches your network:
-
-### 🌟 Method 1: Standard Router / DHCP (No Custom Router Flashing)
-The add-on contains a built-in DNS forwarder (`dnsmasq`) on port 53.
-* In your router's DHCP / LAN settings, set **Primary DNS** to your Home Assistant machine's IP (e.g. `192.168.1.50`).
-* Normal web traffic is resolved through Cloudflare (`1.1.1.1`) and Google (`8.8.8.8`), while `tti.tiwiconnect.com` is automatically caught and pointed to Home Assistant.
-
-### 🛡️ Method 2: Pi-hole or AdGuard Home
-* **Pi-hole**: Navigate to **Local DNS → DNS Records → Add**:
-  * Domain: `tti.tiwiconnect.com`
-  * IP Address: `<Server IP>`
-* **AdGuard Home**: Navigate to **Filters → DNS rewrites → Add DNS rewrite**:
-  * Domain: `tti.tiwiconnect.com`
-  * Answer: `<Server IP>`
-
-### 🌐 Method 3: Ubiquiti UniFi (UDM-Pro / UDM-SE / UCG / Gateway)
-* **Via UniFi Controller UI**:
-  1. Open **Settings → Routing → DNS**.
-  2. Click **Add Static DNS Entry**.
-  3. Domain: `tti.tiwiconnect.com`
-  4. IP Address: `<Server IP>`
-* **Via SSH / Persistent Service**:
-  ```sh
-  cat << 'EOF' > /data/udapi-config/ryobi-dns.sh
-  #!/bin/sh
-  echo 'address=/tti.tiwiconnect.com/<SERVER_IP>' > /run/dnsmasq.dhcp.conf.d/ryobi_dns.conf
-  echo 'address=/tti.tiwiconnect.com/<SERVER_IP>' >> /run/dnsmasq.dns.conf.d/main.conf
-  killall -HUP dnsmasq || true
-  EOF
-  chmod +x /data/udapi-config/ryobi-dns.sh
-  /data/udapi-config/ryobi-dns.sh
-  ```
-
-### 🔒 Method 4: pfSense / OPNsense
-1. Go to **Services → DNS Resolver → General Settings**.
-2. Under **Host Overrides**, click **Add**.
-3. Set **Host**: `tti`, **Domain**: `tiwiconnect.com`, **IP Address**: `<Server IP>`.
-4. Click **Save** and **Apply Changes**.
-
-### 📡 Method 5: OpenWrt / DD-WRT
-* In OpenWrt: **Network → DHCP and DNS → General Settings → Addresses**:
-  `/tti.tiwiconnect.com/<Server IP>`
-* In DD-WRT: **Services → Services → Additional DNS Options**:
-  `address=/tti.tiwiconnect.com/<Server IP>`
-
-### 📶 Method 6: Dedicated Home Assistant Wi-Fi AP (100% Router-Free)
-If you have a Wi-Fi dongle or Raspberry Pi running Home Assistant:
-1. Install the **Access Point** add-on in Home Assistant.
-2. Broadcast a dedicated SSID (e.g. `Ryobi-Garage-WiFi`).
-3. Pair the Ryobi opener directly to that SSID — Home Assistant handles DNS and DHCP directly without touching your home router.
-
----
-
-## Debug Endpoints
+Debug endpoints, on whatever port you use:
 
 ```bash
-# View current state of all devices
-curl http://localhost:8080/state
-
-# Health check
-curl http://localhost:8080/health
-
-# List devices
-curl http://localhost:8080/api/devices
+curl http://<ip>:<port>/health        # liveness
+curl http://<ip>:<port>/state         # everything the server knows
+curl http://<ip>:<port>/api/devices   # what the integration sees
 ```
 
----
+## Security
 
-## Running Tests
+Trusted LAN only. There's no auth by default. Don't port forward this to the internet; if you need remote access, Home Assistant already has that solved.
+
+## Development
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v
+pytest
 ```
 
----
-
-## Architecture
+The server source lives in `ryobi_gdo_local/server/` because the Home Assistant builder can only see files inside the add-on folder. The standalone `Dockerfile` and pip use the same copy.
 
 ```
-server/
-├── main.py         # CLI entrypoint (argparse, config loading, server start)
-├── app.py          # aiohttp Application factory (routes, startup/cleanup hooks)
-├── routes.py       # All HTTP + WebSocket handlers
-├── state.py        # In-memory state store (thread-safe, WS broadcast, persistence)
-├── models.py       # GarageDoorState dataclass + Ryobi JSON response builders
-└── ryobi_proxy.py  # Optional: background task that polls real Ryobi cloud
+ryobi_gdo_local/
+├── config.yaml, build.yaml, run.sh   # HA add-on
+└── server/
+    ├── main.py         # CLI entrypoint, config loading
+    ├── app.py          # aiohttp app factory
+    ├── routes.py       # HTTP + WebSocket handlers
+    ├── state.py        # In-memory state, WS broadcast, persistence
+    ├── models.py       # Ryobi JSON response builders
+    ├── dashboard.py    # Ingress dashboard
+    └── ryobi_proxy.py  # Optional cloud polling
+Dockerfile, docker/     # Standalone image
+dns/                    # Optional dnsmasq sidecar
 ```
 
----
-
-## Open Work
-
-Camera support is still a TODO. Firmware and camera-protocol inspection is ongoing. If you have relevant Ryobi firmware, protocol documentation, or useful captures, please open an issue with the details you can share.
-
----
-
-## FAQ
-
-**Q: Do I need to modify the ryobi_gdo HA integration?**  
-A: No. Just redirect DNS. The integration talks to `tti.tiwiconnect.com` — your local server answers instead. Zero HA config changes needed.
-
-**Q: What happens if Ryobi's cloud is down?**  
-A: Nothing changes — your local server keeps running with last-known state. If `cloud_poll: true`, it keeps retrying and will sync again when the cloud recovers.
-
-**Q: Does this work with GDO125, GDO201, and GD200 hardware communicating to the cloud?**
-
-A: The GDO hardware itself still connects out to Ryobi's cloud — we can't change its firmware. This server intercepts **HA's** connection to the cloud, not the device's. For hardware-level LAN control, you'd need a hardware relay + reed switch (completely different approach).
-
-**Q: Is this secure?**  
-A: It's designed for trusted LAN use only — no authentication by default. Set `enforce_token: true` and use a firewall to restrict access to trusted hosts. Never expose port 80 to the internet.
-
-**Q: Can I add multiple doors?**  
-A: Yes — add multiple entries under `devices:` in config.yaml.
-
----
+Camera support is still a TODO. If you have firmware, protocol docs, or captures, open an issue.
 
 ## License
 

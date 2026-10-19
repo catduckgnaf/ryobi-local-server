@@ -1,29 +1,48 @@
-version: "3.8"
+# Ryobi GDO Local Server, standalone Docker setup.
+#
+#   1. cp .env.example .env   and fill in RYOBI_DEVICE_ID (that's the only required value)
+#   2. docker compose up -d
+#   3. In Home Assistant, set the Ryobi integration's Server field to http://<this-host-ip>:8080
+#
+# No DNS changes are needed for that. The "dns" profile below is only for the
+# experimental mode where the opener itself is redirected; see docs/DNS.md.
 
 services:
   ryobi-local-server:
+    image: ghcr.io/catduckgnaf/ryobi-local-server:latest
     build: .
     container_name: ryobi-local-server
     restart: unless-stopped
+    # Unraid appdata is owned by nobody:users. Uncomment there:
+    # user: "99:100"
     ports:
-      # Map host port 80 to container 8080.
-      # For DNS redirect to work, map to port 80 on host:
-      #   - "80:8080"
-      # Or use port 8080 and configure a reverse proxy (nginx/Caddy) in front.
-      - "80:8080"
-    volumes:
-      # Mount your config file
-      - ./config/config.yaml:/app/config/config.yaml:ro
-      # Persist state between restarts
-      - ryobi_state:/data
+      - "${HTTP_PORT:-8080}:8080"
+      # Only used when SSL_ENABLED=true (DNS redirect mode). Must be 443 on the
+      # host because the opener and the integration expect the standard port.
+      # - "443:8443"
+    env_file:
+      - path: .env
+        required: false
     environment:
-      LOG_LEVEL: INFO
-      # Uncomment to override config file credentials via env:
-      # RYOBI_USERNAME: your_email@example.com
-      # RYOBI_PASSWORD: your_password
-      # RYOBI_DEVICE_ID: GDO_XXXXXXXXXX
-      # RYOBI_CLOUD_POLL: "true"
-      # RYOBI_POLL_INTERVAL: "30"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      # Optional: multi-door or module overrides. Env vars are enough for one door.
+      - ./config:/config:ro
+      - ryobi_state:/data
+
+  # Experimental: answers tti.tiwiconnect.com with ADVERTISE_IP for whatever
+  # LAN devices use this host as their DNS server. Linux hosts only, needs
+  # port 53 free (not usable alongside Pi-hole/AdGuard on the same host; add
+  # the rewrite there instead). Start with:  docker compose --profile dns up -d
+  dns:
+    profiles: ["dns"]
+    build: ./dns
+    container_name: ryobi-dns
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      ADVERTISE_IP: ${ADVERTISE_IP:-}   # required for this profile; set it in .env
+      UPSTREAM_DNS: ${UPSTREAM_DNS:-1.1.1.1 8.8.8.8}
 
 volumes:
   ryobi_state:

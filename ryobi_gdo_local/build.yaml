@@ -1,0 +1,8 @@
+---
+build_from:
+  aarch64: ghcr.io/home-assistant/aarch64-base-python:3.12-alpine3.20
+  amd64: ghcr.io/home-assistant/amd64-base-python:3.12-alpine3.20
+labels:
+  org.opencontainers.image.title: "Ryobi GDO Local Server"
+  org.opencontainers.image.source: "https://github.com/catduckgnaf/ryobi-local-server"
+  org.opencontainers.image.licenses: "MIT"

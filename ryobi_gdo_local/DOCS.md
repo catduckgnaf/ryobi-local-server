@@ -1,158 +1,66 @@
-# Ryobi GDO Local Server — Home Assistant Add-on
+# Ryobi GDO Local Server
 
-Fully local TiwiConnect emulator for Ryobi GDO125, GDO201, and GD200 garage door openers.
+A local stand-in for Ryobi's cloud API so the ryobi_gdo integration keeps working when Ryobi's servers don't. Works with the GDO125, GDO201, and GD200.
 
-- ✅ Runs a complete Ryobi cloud API server on your Home Assistant machine  
-- ✅ Built-in DNS server (`dnsmasq`) auto-redirects `tti.tiwiconnect.com` to local  
-- ✅ **Zero internet required** — works even if Ryobi's cloud is completely dead  
-- ✅ Real-time dashboard in the HA sidebar
-- ✅ Outgoing command webhook to trigger a physical relay (Pi/ESP) when HA opens the door
+## Setup
 
----
-
-## How It Works
-
-```
-Home Assistant (ryobi_gdo integration)
-    │  tries to reach tti.tiwiconnect.com
-    ▼
-[DNS] tti.tiwiconnect.com → 192.168.1.x (your HA machine)  ← dnsmasq does this
-    ▼
-Ryobi GDO Local Server (this addon, port 80)
-    ├── /api/login      ← returns local API key
-    ├── /api/devices    ← returns your device from config
-    ├── /api/wsrpc (WS) ← real-time push + command handling
-    └── /       (GET)   ← live dashboard (HA sidebar)
-```
-
----
-
-## Installation
-
-### 1. Add this repository to HA
-
-In Home Assistant:  
-**Settings → Add-ons → Add-on Store → ⋮ menu → Repositories**  
-Add: `https://github.com/catduckgnaf/ryobi-local-server`
-
-Then install **Ryobi GDO Local Server** from the store.
-
-### 2. Configure the add-on
-
-Go to the **Configuration** tab and set:
-
-| Option | Description |
-|---|---|
-| `device_id` | Your Ryobi device varName (e.g. `GDO_XXXXXXXXXX`) |
-| `device_name` | Friendly name (e.g. `Garage Door`) |
-| `dns_enabled` | `true` to run dnsmasq on port 53 |
-| `server_port` | HTTP port (default `80`) |
-| `command_webhook_url` | Optional — URL on Pi/ESP to trigger physical relay |
-
-**Finding your device_id:**  
-If you previously used the ryobi_gdo integration, check your existing config entry. Or from another machine:
-```bash
-curl -s "https://tti.tiwiconnect.com/api/devices" \
-  --data "username=you@email.com&password=yourpass" \
-  | python3 -m json.tool | grep varName
-```
-
-### 3. Choose your DNS Redirection Method
-
-The physical Ryobi opener and Home Assistant look up `tti.tiwiconnect.com`. Choose **one** of the methods below to route traffic locally:
-
----
-
-#### 🌟 Option 1: No Advanced Router Required — Set Home Assistant as Network DNS (Easiest UI)
-The add-on has a built-in DNS forwarder (`dnsmasq`) running on port 53:
-1. In your standard ISP router's DHCP / LAN settings, set **Primary DNS Server** to your Home Assistant IP (e.g. `192.168.1.50`).
-2. The add-on will answer normal internet DNS requests through Cloudflare (`1.1.1.1`) and Google (`8.8.8.8`) while automatically intercepting `tti.tiwiconnect.com` and pointing it to Home Assistant.
-3. **No custom firewall rules or router flashing needed.**
-
----
-
-#### 🛡️ Option 2: AdGuard Home or Pi-hole (Zero Router Tweaks)
-If you run AdGuard Home or Pi-hole (standalone or via Home Assistant add-on):
-* **AdGuard Home**: Go to **Filters → DNS rewrites → Add DNS rewrite**:
-  * Domain: `tti.tiwiconnect.com`
-  * Answer: `<Home Assistant IP>`
-* **Pi-hole**: Go to **Local DNS → DNS Records → Add**:
-  * Domain: `tti.tiwiconnect.com`
-  * IP Address: `<Home Assistant IP>`
-
----
-
-#### 🌐 Option 3: UniFi Dream Machine (UDM-Pro / SE / UCG / Gateway)
-* **Via UniFi Web UI**:
-  1. Navigate to **Settings → Routing → DNS**.
-  2. Click **Add Static DNS Entry**.
-  3. Set Domain Name: `tti.tiwiconnect.com`
-  4. Set IP Address: `<Home Assistant LAN IP>`
-* **Via SSH / Persistent Script**:
-  ```sh
-  cat << 'EOF' > /data/udapi-config/ryobi-dns.sh
-  #!/bin/sh
-  echo 'address=/tti.tiwiconnect.com/<HA_IP>' > /run/dnsmasq.dhcp.conf.d/ryobi_dns.conf
-  echo 'address=/tti.tiwiconnect.com/<HA_IP>' >> /run/dnsmasq.dns.conf.d/main.conf
-  killall -HUP dnsmasq || true
-  EOF
-  chmod +x /data/udapi-config/ryobi-dns.sh
-  /data/udapi-config/ryobi-dns.sh
-  ```
-
----
-
-#### 🔒 Option 4: pfSense / OPNsense
-1. Go to **Services → DNS Resolver → General Settings**.
-2. Scroll to **Host Overrides** and click **Add**.
-3. Set:
-   * **Host**: `tti`
-   * **Domain**: `tiwiconnect.com`
-   * **IP Address**: `<Home Assistant IP>`
-4. Save and Apply Changes.
-
----
-
-#### 📡 Option 5: OpenWrt
-1. Go to **Network → DHCP and DNS → General Settings**.
-2. Under **Addresses**, enter:
+1. **Find your device ID.** It's Ryobi's `varName` for your opener. While Ryobi's cloud still works, run this from any computer:
+   ```bash
+   curl -s -X GET https://tti.tiwiconnect.com/api/devices \
+     --data-urlencode "username=you@example.com" \
+     --data-urlencode "password=yourpassword" \
+     | grep -o '"varName": *"[^"]*"'
    ```
-   /tti.tiwiconnect.com/<Home Assistant IP>
+   The integration's device dropdown during setup shows the same thing.
+
+2. **Configure the add-on.** On the **Configuration** tab set `device_id`. Leave everything else alone for now.
+
+3. **Start it** and open the **Log** tab. You'll see:
    ```
-3. Click **Save & Apply**.
+   In the Ryobi integration, set Server to:  http://192.168.1.50
+   ```
 
----
+4. **Point the integration at it.** Settings → Devices & services → Ryobi GDO → **Configure**, paste that address into **Server**, submit. For a new install, put it in the **Server** field during setup; any username and password work.
 
-#### 📶 Option 6: Dedicated Home Assistant Wi-Fi Access Point (100% Router-Free)
-If you have a Wi-Fi adapter or Raspberry Pi running Home Assistant:
-1. Install the **Access Point** add-on in Home Assistant.
-2. Broadcast a dedicated SSID (e.g. `Ryobi-Garage-WiFi`).
-3. Pair the Ryobi opener directly to that SSID. Home Assistant handles DNS and DHCP directly.
+5. Click **Ryobi GDO** in the sidebar to see live state.
 
----
+That's it. No DNS, no router settings, no certificates.
 
-### 4. Start the add-on
+## Making it control the real door
 
-Start the add-on and verify in the **Log** tab:
-```
-[INFO] Generating self-signed TLS certificate for tti.tiwiconnect.com...
-[INFO] HTTP Server running on 0.0.0.0:80
-[INFO] HTTPS/WSS Server running on 0.0.0.0:443 (TLS active)
-[INFO] Ingress Server running on 0.0.0.0:8099
-[INFO] Ryobi Local Server is fully initialized.
-```
+The add-on holds state and answers Home Assistant. On its own it doesn't touch the physical opener. Two ways to connect it:
 
-### 5. Open HA sidebar
+**ESP relay (recommended).** An ESP8266/ESP32 with a relay across the wall button terminals and a reed switch on the door. Set `command_webhook_url` to the ESP's endpoint; the add-on POSTs `{"command": "open", "device_id": "...", "module": "garageDoor", "attr": "doorState", "value": "1"}` there. The ESP reports state back with a POST to `http://<HA IP>/state`. A ready ESPHome config is in the repository's `examples/esphome_ryobi.yaml`.
 
-Click **Ryobi GDO** in the Home Assistant sidebar to monitor real-time door status, battery level, WiFi RSSI, and accessory controls.
+**Opener connects directly (experimental).** Redirect the opener's DNS so it talks to this add-on. Needs `https_enabled` and usually `dns_enabled`, and only works if the opener accepts a self-signed certificate. See [docs/DNS.md](https://github.com/catduckgnaf/ryobi-local-server/blob/main/docs/DNS.md).
 
----
+## Options
 
-## Open Work
+| Option | Default | What it does |
+|---|---|---|
+| `device_id` | required | Opener varName |
+| `device_name` | `Garage Door` | Friendly name |
+| `log_level` | `info` | `debug` logs every DNS query and websocket message |
+| `server_port` | `80` | HTTP port the integration connects to |
+| `command_webhook_url` | empty | Where to POST door and light commands |
+| `command_webhook_timeout` | `3` | Seconds to wait for the webhook |
+| `https_enabled` | `false` | Experimental. HTTPS/WSS with a self-signed cert on `https_port` |
+| `https_port` | `443` | Must be 443 for DNS redirect mode |
+| `dns_enabled` | `false` | Experimental. dnsmasq answering `tti.tiwiconnect.com` with this host's IP |
+| `dns_port` | `53` | |
+| `advertise_ip` | auto | Override the detected LAN IP (hosts with several network interfaces) |
 
-Camera support is still a TODO. Firmware and camera-protocol inspection is ongoing. If you have relevant Ryobi firmware, protocol documentation, or useful captures, please open an issue with the details you can share.
+## Troubleshooting
 
----
+**Integration can't connect.** Open `http://<HA IP>/health` from your phone on Wi-Fi. If that fails, check `server_port` isn't used by another add-on (NGINX Proxy Manager likes port 80). Change `server_port` to something like `8088` and use `http://<HA IP>:8088` in the integration.
+
+**Certificate or TLS errors in the HA log.** The integration's Server field is missing `http://`, or still says `tti.tiwiconnect.com`. Fix the Server value.
+
+**Door state never changes.** Nothing is reporting real state. See *Making it control the real door*.
+
+**`dnsmasq failed to start`.** Port 53 is already taken, almost always by the AdGuard Home or Pi-hole add-on. Turn `dns_enabled` off; if you really need the redirect, add it in AdGuard/Pi-hole instead.
+
+**`Failed to start HTTPS listener on port 443`.** Another add-on (NGINX, Caddy) owns 443. You only need HTTPS for the experimental mode, so turn `https_enabled` off.
 
 ## Support
 

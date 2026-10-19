@@ -1,0 +1,46 @@
+---
+configuration:
+  device_id:
+    name: Device ID
+    description: >-
+      Your opener's Ryobi varName, usually GDO_ followed by letters and numbers. See the
+      Documentation tab for how to find it.
+  device_name:
+    name: Device name
+    description: Friendly name shown in Home Assistant.
+  log_level:
+    name: Log level
+  server_port:
+    name: HTTP port
+    description: >-
+      Port the integration connects to. Point the Ryobi integration's Server field at
+      http://<your HA IP> (add :port if you change this from 80).
+  https_enabled:
+    name: Serve HTTPS
+    description: >-
+      Only for the experimental DNS redirect mode. Not needed when the
+      integration's Server field points directly at this add-on.
+  https_port:
+    name: HTTPS port
+    description: Must stay 443 for DNS redirect mode to work.
+  dns_enabled:
+    name: Built-in DNS server
+    description: >-
+      Experimental. Runs dnsmasq on this host and answers tti.tiwiconnect.com
+      with this host's IP. Leave off if you run AdGuard Home or Pi-hole on the
+      same machine; add the rewrite there instead.
+  dns_port:
+    name: DNS port
+  advertise_ip:
+    name: Advertised IP
+    description: >-
+      Override the auto-detected LAN IP used for DNS answers and the TLS
+      certificate. Only needed on hosts with more than one network interface.
+  command_webhook_url:
+    name: Command webhook URL
+    description: >-
+      Optional. Open/close/light commands are POSTed here as JSON so an ESP
+      or Pi relay can press the wall button.
+  command_webhook_timeout:
+    name: Command webhook timeout
+    description: Seconds to wait for the webhook to answer.

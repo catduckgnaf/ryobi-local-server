@@ -36,7 +36,7 @@ def _load_config(config_path: str) -> dict:
             config = yaml.safe_load(f) or {}
         LOGGER.info("Loaded config from %s", config_path)
     else:
-        LOGGER.warning("Config file not found: %s — using defaults", config_path)
+        LOGGER.info("No config file at %s, using environment variables only", config_path)
 
     # Environment variable overrides (useful for Docker)
     if os.environ.get("RYOBI_USERNAME"):
@@ -56,6 +56,12 @@ def _load_config(config_path: str) -> dict:
         config["cloud_poll"] = os.environ["RYOBI_CLOUD_POLL"].lower() not in ("false", "0", "no")
     if os.environ.get("RYOBI_POLL_INTERVAL"):
         config["poll_interval"] = int(os.environ["RYOBI_POLL_INTERVAL"])
+    if os.environ.get("RYOBI_COMMAND_WEBHOOK_URL"):
+        config["command_webhook_url"] = os.environ["RYOBI_COMMAND_WEBHOOK_URL"]
+    if os.environ.get("RYOBI_COMMAND_WEBHOOK_TIMEOUT"):
+        config["command_webhook_timeout"] = int(os.environ["RYOBI_COMMAND_WEBHOOK_TIMEOUT"])
+    if os.environ.get("RYOBI_ENFORCE_TOKEN"):
+        config["enforce_token"] = os.environ["RYOBI_ENFORCE_TOKEN"].lower() in ("true", "1", "yes")
 
     return config
 

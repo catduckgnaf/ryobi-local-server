@@ -1,7 +1,7 @@
 # Ryobi GDO Local Server - Example Configuration
 #
 # Copy this to config.yaml and fill in your values.
-# All fields can also be set via environment variables (see README).
+# Environment variables (see .env.example) override anything set here.
 
 # ---------------------------------------------------------------------------
 # Ryobi account credentials
@@ -14,8 +14,8 @@ password: "your_ryobi_password"
 # ---------------------------------------------------------------------------
 # Devices
 # Add one entry per garage door opener on your account.
-# device_id: the Ryobi "varName" (e.g. GDO_XXXXXXXXXX).
-#   Find it by checking your existing HA integration or the Ryobi app.
+# device_id: the Ryobi "varName" for your opener.
+#   See "Finding your device ID" in the README.
 # ---------------------------------------------------------------------------
 devices:
   - device_id: "GDO_XXXXXXXXXX"
@@ -54,7 +54,7 @@ poll_interval: 30   # seconds (used only if cloud_poll: true)
 #
 # The server POSTs: {"command": "open"|"close"|"toggle", "device_id": "...", "module": "garageDoor", "attr": "doorState", "value": "1"}
 #
-# Example Flask receiver on a Pi is in examples/pi_command_receiver.py
+# Any HTTP endpoint that accepts a JSON POST works (Pi, Node-RED, etc.)
 # Example ESPHome config is in examples/esphome_ryobi.yaml
 # ---------------------------------------------------------------------------
 # command_webhook_url: "http://192.168.1.50:5000/command"

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ryobi-local-server"
-version = "1.1.0"
+version = "1.2.0"
 description = "Local TiwiConnect emulator for Ryobi GDO — replaces Ryobi's cloud on your LAN"
 readme = "README.md"
 license = { text = "MIT" }
@@ -26,10 +26,13 @@ dev = [
 [project.scripts]
 ryobi-server = "server.main:run"
 
+# The server source lives inside the add-on folder because the Home Assistant
+# builder can only see files in that folder. Docker and pip use the same copy.
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["ryobi_gdo_local"]
 include = ["server*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["ryobi_gdo_local"]

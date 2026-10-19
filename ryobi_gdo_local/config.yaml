@@ -1,25 +1,21 @@
 ---
 name: "Ryobi GDO Local Server"
-version: "1.1.0"
+version: "1.2.0"
 slug: "ryobi_gdo_local"
-description: "Local TiwiConnect emulator for Ryobi GDO with built-in DNS redirect"
+description: "Local TiwiConnect emulator for Ryobi garage door openers"
 url: "https://github.com/catduckgnaf/ryobi-local-server"
 arch:
   - aarch64
   - amd64
-  - armhf
-  - armv7
-  - i386
 startup: services
 boot: auto
 init: false
 host_network: true
-privileged:
-  - NET_ADMIN
 ingress: true
 ingress_port: 8099
 panel_icon: "mdi:garage"
 panel_title: "Ryobi GDO"
+watchdog: "http://[HOST]:[PORT:8099]/health"
 environment:
   STATE_FILE: "/data/ryobi_state.json"
 options:
@@ -27,7 +23,9 @@ options:
   device_name: "Garage Door"
   log_level: "info"
   server_port: 80
-  dns_enabled: true
+  https_enabled: false
+  https_port: 443
+  dns_enabled: false
   dns_port: 53
   command_webhook_url: ""
   command_webhook_timeout: 3
@@ -36,7 +34,10 @@ schema:
   device_name: "str"
   log_level: "list(debug|info|warning|error)"
   server_port: "port"
+  https_enabled: "bool"
+  https_port: "port"
   dns_enabled: "bool"
   dns_port: "port"
+  advertise_ip: "str?"
   command_webhook_url: "str?"
-  command_webhook_timeout: "int?"
+  command_webhook_timeout: "int(1,30)?"

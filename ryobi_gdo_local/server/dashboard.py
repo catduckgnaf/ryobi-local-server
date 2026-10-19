@@ -13,7 +13,7 @@ from aiohttp import web
 
 LOGGER = logging.getLogger(__name__)
 
-DASHBOARD_HTML = """<!DOCTYPE html>
+DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
