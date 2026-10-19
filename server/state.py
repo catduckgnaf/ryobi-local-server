@@ -333,7 +333,12 @@ class StateStore:
             for device_id, saved in data.items():
                 dev = self._devices.get(device_id)
                 if dev is None:
-                    LOGGER.warning("Persisted state has unknown device %s, skipping", device_id)
+                    LOGGER.warning(
+                        "Persisted state has unknown device %s, skipping. "
+                        "It is left over in %s from an earlier device_id.",
+                        device_id,
+                        _STATE_FILE,
+                    )
                     continue
                 for field_name, value in saved.items():
                     if field_name == "modules" and isinstance(value, dict) and value:

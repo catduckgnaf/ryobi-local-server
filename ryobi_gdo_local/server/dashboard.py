@@ -248,7 +248,7 @@ async function pushState(field, value) {
 function connectWS() {
   const dot = document.getElementById('ws-dot');
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsCleanPath = basePath.replace(/^\/+/, '');
+  const wsCleanPath = basePath.replace(/^\\/+/,'');
   const wsUrl = `${proto}//${location.host}/${wsCleanPath}api/wsrpc`;
   const ws = new WebSocket(wsUrl);
 
