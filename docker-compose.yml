@@ -1,3 +1,16 @@
+# Local Ryobi server plus the same DNS the Home Assistant add-on runs.
+#
+# DNS is required. ryobi-dns answers tti.tiwiconnect.com with this
+# machine's LAN IP and forwards every other name upstream.
+#
+# Linux:
+#   export RYOBI_HOST_IP=192.168.x.x
+#   docker compose up -d
+# Then set the router's LAN DNS server to that same address.
+#
+# Docker Desktop on Mac or Windows cannot answer LAN DNS this way.
+# Use the Home Assistant add-on instead.
+
 version: "3.8"
 
 services:
@@ -6,24 +19,28 @@ services:
     container_name: ryobi-local-server
     restart: unless-stopped
     ports:
-      # Map host port 80 to container 8080.
-      # For DNS redirect to work, map to port 80 on host:
-      #   - "80:8080"
-      # Or use port 8080 and configure a reverse proxy (nginx/Caddy) in front.
+      # Host port 80, because http://tti.tiwiconnect.com has no port.
       - "80:8080"
     volumes:
-      # Mount your config file
       - ./config/config.yaml:/app/config/config.yaml:ro
-      # Persist state between restarts
       - ryobi_state:/data
+    # This process must not use the rewrite below. Clients do.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     environment:
       LOG_LEVEL: INFO
-      # Uncomment to override config file credentials via env:
-      # RYOBI_USERNAME: your_email@example.com
-      # RYOBI_PASSWORD: your_password
-      # RYOBI_DEVICE_ID: GDO_XXXXXXXXXX
-      # RYOBI_CLOUD_POLL: "true"
-      # RYOBI_POLL_INTERVAL: "30"
+
+  ryobi-dns:
+    image: alpine:3.20
+    container_name: ryobi-dns
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      RYOBI_HOST_IP: ${RYOBI_HOST_IP:?required}
+    volumes:
+      - ./docker/dns-entrypoint.sh:/dns-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/dns-entrypoint.sh"]
 
 volumes:
   ryobi_state:

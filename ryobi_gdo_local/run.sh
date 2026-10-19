@@ -58,6 +58,10 @@ bashio::log.info "Detected host IP: ${HOST_IP}"
 DNSMASQ_CONF="/etc/dnsmasq.d/ryobi.conf"
 
 if [ "${DNS_ENABLED}" = "true" ]; then
+    if bashio::var.is_empty "${HOST_IP}"; then
+        bashio::log.fatal "Could not detect this machine's LAN IP. DNS cannot be configured."
+        exit 1
+    fi
     bashio::log.info "Configuring dnsmasq on port ${DNS_PORT}..."
 
     # Build dnsmasq config:
@@ -94,6 +98,14 @@ EOF
     bashio::log.info "Starting dnsmasq..."
     dnsmasq --no-daemon &
     DNSMASQ_PID=$!
+    sleep 1
+    if ! kill -0 "${DNSMASQ_PID}" 2>/dev/null; then
+        bashio::log.fatal "dnsmasq did not stay running. Port ${DNS_PORT} is already in use."
+        bashio::log.fatal "AdGuard, Pi-hole, or another DNS add-on is already bound there."
+        bashio::log.fatal "Stop that, or set dns_enabled off and add one rewrite on the DNS you already run:"
+        bashio::log.fatal "  tti.tiwiconnect.com -> ${HOST_IP}"
+        exit 1
+    fi
     bashio::log.info "dnsmasq started (PID: ${DNSMASQ_PID})"
 
     # Also update /etc/resolv.conf inside the addon container so the Python
@@ -101,14 +113,11 @@ EOF
     echo "nameserver 127.0.0.1" > /etc/resolv.conf
     echo "nameserver 1.1.1.1" >> /etc/resolv.conf
 
-    bashio::log.info "DNS redirect active: tti.tiwiconnect.com -> ${HOST_IP}"
-    bashio::log.info ""
-    bashio::log.info "============================================================"
-    bashio::log.info "  Point your router's DNS to: ${HOST_IP}"
-    bashio::log.info "  OR add to each device's DNS settings: ${HOST_IP}"
-    bashio::log.info "  tti.tiwiconnect.com will resolve to ${HOST_IP}:${SERVER_PORT}"
-    bashio::log.info "============================================================"
-    bashio::log.info ""
+    bashio::log.info "DNS is running. This add-on is the DNS server for tti.tiwiconnect.com."
+    bashio::log.info "Point your router's DNS to: ${HOST_IP}"
+    bashio::log.info "Then from another computer on this network run: nslookup tti.tiwiconnect.com"
+    bashio::log.info "The answer must be ${HOST_IP}. A public address means that computer is not using this DNS."
+    bashio::log.info "In the Ryobi integration set Host to: http://tti.tiwiconnect.com"
 else
     bashio::log.info "DNS disabled — skipping dnsmasq."
     bashio::log.info "You must manually redirect tti.tiwiconnect.com -> ${HOST_IP}"
