@@ -40,7 +40,7 @@ export RYOBI_HOST_IP=192.168.x.x   # this machine's LAN address, not a container
 docker compose up -d
 ```
 
-`ryobi-dns` is the same dnsmasq the add-on runs. Point the router's LAN DNS server at `RYOBI_HOST_IP`. Then:
+`ryobi-dns` is the same dnsmasq the add-on runs. Point the router's LAN DNS server at `RYOBI_HOST_IP`. Compose publishes port 80 for Home Assistant and port 443 for the opener. The opener uses TLS on 443 after the name lookup. Then:
 
 ```bash
 nslookup tti.tiwiconnect.com

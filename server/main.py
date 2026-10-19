@@ -28,6 +28,38 @@ logging.basicConfig(
 LOGGER = logging.getLogger(__name__)
 
 
+def _log_tls_handshake_failures() -> None:
+    """Record opener connections that die during TLS.
+
+    ssl.SSLError is an OSError, and asyncio only logs those when the loop
+    is in debug mode. Without this, a garage door that connects to port 443
+    and rejects the certificate leaves no line in the add-on log.
+    """
+    import ssl
+    from asyncio.sslproto import SSLProtocol
+
+    original = SSLProtocol._fatal_error
+
+    def _fatal_error(self, exc, message="Fatal error on transport"):  # type: ignore[no-untyped-def]
+        if isinstance(exc, ssl.SSLError):
+            peer = None
+            transport = getattr(self, "_transport", None)
+            extra = getattr(transport, "_extra", None) if transport is not None else None
+            if isinstance(extra, dict):
+                peer = extra.get("peername")
+            LOGGER.warning(
+                "TLS handshake failed from %s: %s. "
+                "The opener does this when it rejects the certificate on port 443. "
+                "A successful opener login is a WebSocket line from that same address, "
+                "not the Home Assistant poll of /api/devices.",
+                peer or "unknown",
+                exc,
+            )
+        return original(self, exc, message)
+
+    SSLProtocol._fatal_error = _fatal_error  # type: ignore[method-assign]
+
+
 def _load_config(config_path: str) -> dict:
     """Load YAML config file, merging with environment variable overrides."""
     config: dict = {}
@@ -113,6 +145,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 async def _async_main(args: argparse.Namespace) -> None:
     logging.getLogger().setLevel(getattr(logging, args.log_level.upper()))
+    _log_tls_handshake_failures()
     config = _load_config(args.config)
 
     if not config.get("devices"):
