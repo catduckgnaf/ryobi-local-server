@@ -48,9 +48,7 @@ def _log_tls_handshake_failures() -> None:
             if isinstance(extra, dict):
                 peer = extra.get("peername")
             LOGGER.warning(
-                "TLS handshake failed from %s: %s. "
-                "A completed opener login is a later line, "
-                "WebSocket client connected from that same address.",
+                "TLS handshake failed from %s: %s.",
                 peer or "unknown",
                 exc,
             )
@@ -60,17 +58,27 @@ def _log_tls_handshake_failures() -> None:
 
 
 def _server_ssl_context(certfile: str, keyfile: str):
-    """TLS an old opener can finish.
+    """TLS the opener can finish.
 
-    OpenSSL 3 security level 2 disables SHA-1. The door offers only those
-    signature algorithms and the handshake dies with
-    NO_SHARED_SIGNATURE_ALGORITHMS before any HTTP.
+    tti.tiwiconnect.com still accepts TLS 1.0 with ECDHE-RSA-AES128-SHA.
+    OpenSSL 3's default is TLS 1.2 at security level 2, which answered the
+    door with NO_SHARED_SIGNATURE_ALGORITHMS and then NO_SHARED_CIPHER.
     """
     import ssl
+    import warnings
 
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    ctx.set_ciphers("DEFAULT:@SECLEVEL=0")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1
+    # ALL, not DEFAULT: the door's list is the old SHA-1 and CBC suites.
+    ctx.set_ciphers("ALL:@SECLEVEL=0")
     ctx.load_cert_chain(certfile=certfile, keyfile=keyfile)
+    LOGGER.info(
+        "TLS for the opener: %d ciphers, minimum %s",
+        len(ctx.get_ciphers()),
+        getattr(ctx.minimum_version, "name", ctx.minimum_version),
+    )
     return ctx
 
 
