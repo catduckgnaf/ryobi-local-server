@@ -26,6 +26,7 @@ DNS_ENABLED="$(bashio::config 'dns_enabled' 'true')"
 DNS_PORT="$(bashio::config 'dns_port' '53')"
 COMMAND_WEBHOOK_URL="$(bashio::config 'command_webhook_url' '')"
 COMMAND_WEBHOOK_TIMEOUT="$(bashio::config 'command_webhook_timeout' '3')"
+FAN_PORTS="$(bashio::config 'fan_ports' '')"
 INGRESS_PORT="$(bashio::addon.ingress_port)"
 
 if bashio::var.is_empty "${DEVICE_ID}"; then
@@ -38,6 +39,27 @@ bashio::log.info "Device Name: ${DEVICE_NAME}"
 bashio::log.info "Server Port: ${SERVER_PORT}"
 bashio::log.info "DNS Enabled: ${DNS_ENABLED}"
 bashio::log.info "Log Level:   ${LOG_LEVEL}"
+
+# Empty fan_ports keeps the single fan_3 module. "2,5" publishes fan_2 and fan_5.
+FAN_YAML='      fan: "fan_3"'
+if ! bashio::var.is_empty "${FAN_PORTS}"; then
+    FAN_YAML=""
+    fan_index=1
+    old_ifs="${IFS}"
+    IFS=','
+    for fan_port in ${FAN_PORTS}; do
+        fan_port="$(printf '%s' "${fan_port}" | tr -cd '0-9')"
+        if [ -n "${fan_port}" ]; then
+            FAN_YAML="${FAN_YAML}      fan${fan_index}: \"fan_${fan_port}\"
+"
+            fan_index=$((fan_index + 1))
+        fi
+    done
+    IFS="${old_ifs}"
+    if [ -z "${FAN_YAML}" ]; then
+        FAN_YAML='      fan: "fan_3"'
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 # Detect host LAN IP
@@ -143,7 +165,7 @@ devices:
       parkAssistLaser: "parkAssistLaser_1"
       inflator: "inflator_4"
       btSpeaker: "btSpeaker_2"
-      fan: "fan_3"
+${FAN_YAML}
 
 cloud_poll: false
 enforce_token: false

@@ -26,6 +26,7 @@ Install **Ryobi GDO Local Server**.
 | `device_name` | Whatever you want on the dashboard |
 | `dns_enabled` | **On.** This is the built-in DNS. |
 | `server_port` | `80` |
+| `fan_ports` | Leave empty for one fan. For a fan on port 2 and port 5, set `2,5`. The integration then shows Fan 2 and Fan 5. |
 
 Start the add-on. In the **Log** tab you want these lines:
 

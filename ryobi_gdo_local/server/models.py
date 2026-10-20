@@ -6,6 +6,27 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+def fan_module_keys(modules: dict[str, Any] | None) -> list[str]:
+    """Return one deviceTypeMap key per configured fan.
+
+    ``fan: fan_3`` is one fan. ``fan1: fan_2`` and ``fan2: fan_5`` are two.
+    The name only has to start with ``fan``. The value is the port key the
+    integration reads, and the number after the underscore is the port.
+    """
+    found: list[str] = []
+    for name, raw in (modules or {}).items():
+        if not isinstance(name, str) or not name.lower().startswith("fan"):
+            continue
+        key = str(raw).strip()
+        if not key:
+            continue
+        if not key.lower().startswith("fan"):
+            key = f"fan_{key}"
+        if key not in found:
+            found.append(key)
+    return found
+
+
 @dataclass
 class GarageDoorState:
     """Current state of a single garage door / GDO device."""
@@ -33,6 +54,8 @@ class GarageDoorState:
     ext_cord: bool = True
     fan: bool = False
     fan_speed: int = 0
+    # One entry per fan port, keyed by the deviceTypeMap name (fan_2, fan_5).
+    fans: dict[str, dict[str, int]] = field(default_factory=dict)
     camera_state: bool = True
     camera_recording: bool = False
     camera_image_url: str = ""
@@ -150,13 +173,23 @@ class GarageDoorState:
             }
         }
 
-        # --- fan ---
-        fan_key = (self.modules or {}).get("fan", "fan_3")
-        if "fan" in (self.modules or {}):
+        # --- fans (one entry per configured port) ---
+        fan_keys = fan_module_keys(self.modules)
+        for index, fan_key in enumerate(fan_keys):
+            stored = self.fans.get(fan_key) or {}
+            if stored:
+                state = int(stored.get("moduleState", 0) or 0)
+                speed = int(stored.get("speed", 0) or 0)
+            elif index == 0:
+                state = 1 if self.fan else 0
+                speed = int(self.fan_speed or 0)
+            else:
+                state = 0
+                speed = 0
             dtm[fan_key] = {
                 "at": {
-                    "moduleState": {"value": 1 if self.fan else 0},
-                    "speed": {"value": self.fan_speed if self.fan else 0},
+                    "moduleState": {"value": state},
+                    "speed": {"value": speed if state else 0},
                 }
             }
 
