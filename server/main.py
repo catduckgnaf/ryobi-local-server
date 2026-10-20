@@ -49,15 +49,29 @@ def _log_tls_handshake_failures() -> None:
                 peer = extra.get("peername")
             LOGGER.warning(
                 "TLS handshake failed from %s: %s. "
-                "The opener does this when it rejects the certificate on port 443. "
-                "A successful opener login is a WebSocket line from that same address, "
-                "not the Home Assistant poll of /api/devices.",
+                "A completed opener login is a later line, "
+                "WebSocket client connected from that same address.",
                 peer or "unknown",
                 exc,
             )
         return original(self, exc, message)
 
     SSLProtocol._fatal_error = _fatal_error  # type: ignore[method-assign]
+
+
+def _server_ssl_context(certfile: str, keyfile: str):
+    """TLS an old opener can finish.
+
+    OpenSSL 3 security level 2 disables SHA-1. The door offers only those
+    signature algorithms and the handshake dies with
+    NO_SHARED_SIGNATURE_ALGORITHMS before any HTTP.
+    """
+    import ssl
+
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.set_ciphers("DEFAULT:@SECLEVEL=0")
+    ctx.load_cert_chain(certfile=certfile, keyfile=keyfile)
+    return ctx
 
 
 def _load_config(config_path: str) -> dict:
@@ -168,8 +182,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     if args.ssl_cert and os.path.exists(args.ssl_cert) and args.ssl_key and os.path.exists(args.ssl_key):
         try:
             import ssl
-            ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            ssl_ctx.load_cert_chain(certfile=args.ssl_cert, keyfile=args.ssl_key)
+            ssl_ctx = _server_ssl_context(args.ssl_cert, args.ssl_key)
             site_https = web.TCPSite(runner, host=args.host, port=args.ssl_port, ssl_context=ssl_ctx)
             await site_https.start()
             LOGGER.info("HTTPS/WSS Server running on %s:%d (TLS active)", args.host, args.ssl_port)
