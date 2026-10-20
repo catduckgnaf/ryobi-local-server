@@ -15,7 +15,7 @@ from typing import Any
 
 import aiofiles
 
-from .models import GarageDoorState
+from .models import GarageDoorState, fan_module_keys
 
 LOGGER = logging.getLogger(__name__)
 
@@ -128,11 +128,21 @@ class StateStore:
                     updates["mic_status"] = bool(val)
 
             elif "fan" in key:
+                module_key = parts[0] if "." in key else "fan"
+                pushed = updates.setdefault("_fan_push", {})
+                entry = pushed.setdefault(module_key, {})
                 if attr == "speed":
-                    updates["fan_speed"] = int(val)
-                    updates["fan"] = bool(val > 0)
+                    speed = int(val)
+                    entry["speed"] = speed
+                    entry["moduleState"] = 1 if speed > 0 else 0
                 elif attr == "moduleState":
-                    updates["fan"] = bool(val)
+                    entry["moduleState"] = 1 if val else 0
+
+        fan_push = updates.pop("_fan_push", None)
+        if fan_push:
+            device = self.get_device(device_id)
+            if device is not None:
+                updates["fans"] = self._merge_fans(device, fan_push)
 
         if updates:
             LOGGER.info("Physical device [%s] pushed updates: %s", device_id, updates)
@@ -170,7 +180,91 @@ class StateStore:
 
         return True
 
-    async def apply_command(self, device_id: str, module: str, attr: str, value: Any) -> bool:
+    def _merge_fans(self, device: GarageDoorState, pushed: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
+        """Apply per-port fan updates onto the stored fan map."""
+        fans = {key: dict(value) for key, value in device.fans.items()}
+        keys = fan_module_keys(device.modules)
+        for module_key, attrs in pushed.items():
+            target = module_key if module_key in keys else None
+            if target is None and keys:
+                suffix = module_key.rsplit("_", 1)[-1]
+                for key in keys:
+                    if key.rsplit("_", 1)[-1] == suffix:
+                        target = key
+                        break
+            if target is None:
+                target = keys[0] if keys else module_key
+            current = dict(fans.get(target, {}))
+            current.update(attrs)
+            fans[target] = current
+        self._sync_first_fan(device, fans, keys)
+        return fans
+
+    @staticmethod
+    def _sync_first_fan(device: GarageDoorState, fans: dict[str, dict[str, int]], keys: list[str]) -> None:
+        """Keep the original fan fields aligned with the first port."""
+        if not keys or keys[0] not in fans:
+            return
+        first = fans[keys[0]]
+        device.fan = bool(int(first.get("moduleState", 0) or 0))
+        device.fan_speed = int(first.get("speed", 0) or 0)
+
+    def _fan_command_updates(
+        self, device: GarageDoorState, attr: str, value: Any, port_id: Any
+    ) -> tuple[dict[str, Any], int | None]:
+        """Return state updates for one fan port, and the port to forward."""
+        keys = fan_module_keys(device.modules)
+        target = None
+        if port_id is not None:
+            port = str(port_id)
+            for key in keys:
+                if key.rsplit("_", 1)[-1] == port:
+                    target = key
+                    break
+        if target is None and keys:
+            target = keys[0]
+        resolved_port = None
+        if target and "_" in target and target.rsplit("_", 1)[-1].isdigit():
+            resolved_port = int(target.rsplit("_", 1)[-1])
+        elif port_id is not None:
+            try:
+                resolved_port = int(port_id)
+            except (TypeError, ValueError):
+                resolved_port = None
+
+        if attr == "speed":
+            try:
+                speed = int(value)
+            except (TypeError, ValueError):
+                speed = 0
+            attrs = {"speed": speed, "moduleState": 1 if speed > 0 else 0}
+        else:
+            on = value is True or value == 1 or str(value).lower() in ("1", "true", "on")
+            attrs = {"moduleState": 1 if on else 0}
+            if not on:
+                attrs["speed"] = 0
+
+        if target is None:
+            on = bool(attrs.get("moduleState"))
+            speed = int(attrs.get("speed", device.fan_speed if on else 0))
+            return {"fan": on, "fan_speed": speed}, resolved_port
+
+        fans = self._merge_fans(device, {target: attrs})
+        if not attrs.get("moduleState"):
+            fans[target]["speed"] = 0
+        elif int(fans[target].get("speed", 0) or 0) <= 0 and attr != "speed":
+            fans[target]["speed"] = 1
+        self._sync_first_fan(device, fans, keys)
+        return {"fans": fans, "fan": device.fan, "fan_speed": device.fan_speed}, resolved_port
+
+    async def apply_command(
+        self,
+        device_id: str,
+        module: str,
+        attr: str,
+        value: Any,
+        port_id: Any = None,
+    ) -> bool:
         """
         Apply a command (from WebSocket gdoModuleCommand) to local state and forward to hardware.
 
@@ -189,39 +283,51 @@ class StateStore:
             ("fan", "moduleState"): "fan",
             ("fan", "speed"): "fan_speed",
         }
-        field = field_map.get((module, attr))
-        if field is None:
-            LOGGER.warning("No field mapping for module=%s attr=%s", module, attr)
+        device = self.get_device(device_id)
+        if device is None:
+            LOGGER.warning("apply_command: unknown device %s", device_id)
             return False
 
-        # Normalize bool-like values
-        if field == "fan_speed":
-            try:
-                norm_value = int(value)
-            except (ValueError, TypeError):
-                norm_value = 0
-        elif field == "door_state":
-            norm_value = str(value)
-        elif isinstance(value, str):
-            norm_value = value.lower() in ("1", "true", "on", "open")
-        elif isinstance(value, int):
-            norm_value = bool(value)
+        fan_port: int | None = None
+        if module == "fan":
+            updates, fan_port = self._fan_command_updates(device, attr, value, port_id)
+            if attr == "speed":
+                try:
+                    norm_value = int(value)
+                except (TypeError, ValueError):
+                    norm_value = 0
+            else:
+                norm_value = value is True or value == 1 or str(value).lower() in ("1", "true", "on")
         else:
-            norm_value = value
+            field = field_map.get((module, attr))
+            if field is None:
+                LOGGER.warning("No field mapping for module=%s attr=%s", module, attr)
+                return False
+
+            if field == "door_state":
+                norm_value = str(value)
+            elif isinstance(value, str):
+                norm_value = value.lower() in ("1", "true", "on", "open")
+            elif isinstance(value, int):
+                norm_value = bool(value)
+            else:
+                norm_value = value
+            updates = {field: norm_value}
 
         # Forward command down to physical opener if connected
         device_ws = self._device_sockets.get(device_id)
         if device_ws and not device_ws.closed:
+            fan_forward_port = fan_port if fan_port is not None else 3
             module_info = {
                 "garageDoor": (5, 7, {"doorCommand": 1 if str(value) in ("1", "true", "open") else 0}),
                 "garageLight": (5, 7, {"lightState": 1 if norm_value else 0}),
                 "parkAssistLaser": (1, 3, {"moduleState": 1 if norm_value else 0}),
                 "inflator": (4, 0, {"moduleState": 1 if norm_value else 0}),
                 "btSpeaker": (2, 6, {"moduleState": 1 if norm_value else 0} if attr != "micEnable" else {"micEnable": 1 if norm_value else 0}),
-                "fan": (3, 3, {"speed": norm_value} if attr == "speed" else {"moduleState": 1 if norm_value else 0}),
+                "fan": (3, fan_forward_port, {"speed": norm_value} if attr == "speed" else {"moduleState": 1 if norm_value else 0}),
             }
             if module in module_info:
-                mod_type, port_id, mod_msg = module_info[module]
+                mod_type, forward_port, mod_msg = module_info[module]
                 cmd_payload = {
                     "jsonrpc": "2.0",
                     "id": int(asyncio.get_event_loop().time() * 1000),
@@ -229,7 +335,7 @@ class StateStore:
                     "params": {
                         "msgType": 16,
                         "moduleType": mod_type,
-                        "portId": port_id,
+                        "portId": forward_port,
                         "moduleMsg": mod_msg,
                         "topic": device_id,
                     },
@@ -240,7 +346,7 @@ class StateStore:
                 except Exception as err:
                     LOGGER.warning("Failed to forward command to physical device %s: %s", device_id, err)
 
-        return await self.update_state(device_id, {field: norm_value})
+        return await self.update_state(device_id, updates)
 
     # ------------------------------------------------------------------
     # WebSocket client management
@@ -315,6 +421,7 @@ class StateStore:
                     "mic_status": dev.mic_status,
                     "inflator": dev.inflator,
                     "ext_cord": dev.ext_cord,
+                    "fans": dev.fans,
                     "modules": dev.modules,
                 }
             async with aiofiles.open(_STATE_FILE, "w") as f:

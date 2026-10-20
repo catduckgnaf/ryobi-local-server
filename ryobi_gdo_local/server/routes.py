@@ -270,7 +270,9 @@ async def _handle_ws_message(
                 attr = "doorState"
                 value = "1" if str(value) in ("1", "true", "open") else "0"
 
-            await store.apply_command(device_id, module_name, attr, value)
+            await store.apply_command(
+                device_id, module_name, attr, value, port_id=params.get("portId")
+            )
 
             # Fire outgoing command webhook if configured
             webhook_url = config.get("command_webhook_url", "")

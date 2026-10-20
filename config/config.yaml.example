@@ -31,6 +31,9 @@ devices:
       # parkAssistLaser: "parkAssistLaser_1"
       # inflator: "inflator_4"
       # btSpeaker: "btSpeaker_2"
+      # One line per fan. The name must start with fan. The value is the port.
+      # fan1: "fan_2"
+      # fan2: "fan_5"
 
   # Uncomment to add a second door:
   # - device_id: "GDO_YYYYYYYYYY"

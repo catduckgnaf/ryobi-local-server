@@ -96,6 +96,34 @@ async def test_apply_command_unknown_module(store: StateStore):
     assert result is False
 
 
+async def test_two_fan_ports_stay_separate():
+    """fan1/fan2 config keys are two ports, and a command names one of them."""
+    store = StateStore()
+    store.add_device(GarageDoorState(
+        device_id="GDO_FANS",
+        modules={"fan1": "fan_2", "fan2": "fan_5"},
+    ))
+
+    dev = store.get_device("GDO_FANS")
+    dtm = dev.build_device_type_map()
+    assert set(dtm) >= {"fan_2", "fan_5"}
+    assert "fan1" not in dtm
+
+    await store.apply_command("GDO_FANS", "fan", "speed", 3, port_id=5)
+    dev = store.get_device("GDO_FANS")
+    dtm = dev.build_device_type_map()
+    assert dtm["fan_5"]["at"]["speed"]["value"] == 3
+    assert dtm["fan_5"]["at"]["moduleState"]["value"] == 1
+    assert dtm["fan_2"]["at"]["speed"]["value"] == 0
+
+    await store.apply_command("GDO_FANS", "fan", "moduleState", 1, port_id=2)
+    dev = store.get_device("GDO_FANS")
+    dtm = dev.build_device_type_map()
+    assert dtm["fan_2"]["at"]["moduleState"]["value"] == 1
+    assert dtm["fan_2"]["at"]["speed"]["value"] == 1
+    assert dtm["fan_5"]["at"]["speed"]["value"] == 3
+
+
 # ---------------------------------------------------------------------------
 # WebSocket client tracking
 # ---------------------------------------------------------------------------
