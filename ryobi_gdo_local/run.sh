@@ -1,3 +1,25 @@
+
+# The opener checks the server chain against a root it ships with, so a
+# self-signed certificate is refused. opener_cert_pem / opener_key_pem take a
+# full chain (leaf first) and its key, newlines or literal 
+ both accepted.
+SSL_CERT="${SSL_DIR}/server.crt"
+SSL_KEY="${SSL_DIR}/server.key"
+OPENER_CERT_PEM="$(bashio::config 'opener_cert_pem' '')"
+OPENER_KEY_PEM="$(bashio::config 'opener_key_pem' '')"
+if [ -n "${OPENER_CERT_PEM}" ] && [ -n "${OPENER_KEY_PEM}" ]; then
+    printf '%s
+' "${OPENER_CERT_PEM}" | sed 's/\n/
+/g' > "${SSL_DIR}/opener.crt"
+    printf '%s
+' "${OPENER_KEY_PEM}" | sed 's/\n/
+/g' > "${SSL_DIR}/opener.key"
+    chmod 600 "${SSL_DIR}/opener.key"
+    SSL_CERT="${SSL_DIR}/opener.crt"
+    SSL_KEY="${SSL_DIR}/opener.key"
+    bashio::log.info "Opener certificate: $(grep -c 'BEGIN CERTIFICATE' "${SSL_CERT}") in chain, $(openssl x509 -in "${SSL_CERT}" -noout -subject -issuer | tr '
+' ' ')"
+fi
 #!/usr/bin/with-contenv bashio
 # ==============================================================================
 # Ryobi GDO Local Server — Home Assistant Add-on entrypoint
@@ -194,6 +216,22 @@ if [ ! -f "${SSL_DIR}/server.crt" ] || [ ! -f "${SSL_DIR}/server.key" ]; then
         -addext "subjectAltName=DNS:tti.tiwiconnect.com,DNS:tti-prod2.thomisidae.com,IP:${HOST_IP}" || true
 fi
 
+# The opener checks the server chain against a root it ships with and refuses
+# the self-signed certificate. opener_cert_pem takes a full chain (leaf first)
+# and opener_key_pem its key; real newlines or literal \n both work.
+SSL_CERT="${SSL_DIR}/server.crt"
+SSL_KEY="${SSL_DIR}/server.key"
+OPENER_CERT_PEM="$(bashio::config 'opener_cert_pem' '')"
+OPENER_KEY_PEM="$(bashio::config 'opener_key_pem' '')"
+if [ -n "${OPENER_CERT_PEM}" ] && [ -n "${OPENER_KEY_PEM}" ]; then
+    printf '%s\n' "${OPENER_CERT_PEM}" | sed 's/\\n/\n/g' > "${SSL_DIR}/opener.crt"
+    printf '%s\n' "${OPENER_KEY_PEM}" | sed 's/\\n/\n/g' > "${SSL_DIR}/opener.key"
+    chmod 600 "${SSL_DIR}/opener.key"
+    SSL_CERT="${SSL_DIR}/opener.crt"
+    SSL_KEY="${SSL_DIR}/opener.key"
+    bashio::log.info "Opener certificate: $(grep -c 'BEGIN CERTIFICATE' "${SSL_CERT}") in chain, $(openssl x509 -in "${SSL_CERT}" -noout -subject -issuer | tr '\n' ' ')"
+fi
+
 # ---------------------------------------------------------------------------
 # Start the Ryobi local server (HTTP 80 + HTTPS 443 + Ingress 8099)
 # ---------------------------------------------------------------------------
@@ -204,8 +242,8 @@ python3 -m server.main \
     --host 0.0.0.0 \
     --port "${SERVER_PORT}" \
     --ssl-port 443 \
-    --ssl-cert "${SSL_DIR}/server.crt" \
-    --ssl-key "${SSL_DIR}/server.key" \
+    --ssl-cert "${SSL_CERT}" \
+    --ssl-key "${SSL_KEY}" \
     --ingress-port "${INGRESS_PORT}" \
     --log-level "$(echo ${LOG_LEVEL} | tr '[:lower:]' '[:upper:]')" &
 
