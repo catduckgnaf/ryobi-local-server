@@ -123,10 +123,8 @@ class OpenerTLSBridge:
             first = True
             try:
                 while data := upstream.recv(16384):
-                    if first:
-                        # aiohttp answers "Connection: upgrade"; the cloud and
-                        # most embedded clients expect "Upgrade".
-                        data = data.replace(b"\r\nConnection: upgrade\r\n", b"\r\nConnection: Upgrade\r\n", 1)
+                    if first and not self._cloud_relay_ip:
+                        data = _cloud_style_upgrade(data)
                         first = False
                     to_log.feed(data)
                     tls.sendall(data)
@@ -145,6 +143,32 @@ class OpenerTLSBridge:
         finally:
             close_both()
             LOGGER.info("Opener TLS connection from %s closed", addr)
+
+
+def _cloud_style_upgrade(data: bytes) -> bytes:
+    """
+    Rewrite aiohttp's 101 response the way the Ryobi cloud sends it.
+
+    The opener stays silent after aiohttp's 101 (Accept in the middle, a
+    Server header after it) but talks at once after the cloud's, which ends
+    with Sec-WebSocket-Accept:
+      Date, Connection: Upgrade, Upgrade: websocket, Sec-WebSocket-Accept
+    """
+    head, sep, rest = data.partition(b"\r\n\r\n")
+    if not sep or not head.startswith(b"HTTP/1.1 101"):
+        return data
+    headers = {}
+    for line in head.split(b"\r\n")[1:]:
+        name, _, value = line.partition(b":")
+        headers[name.strip().lower()] = value.strip()
+    accept = headers.get(b"sec-websocket-accept")
+    if accept is None:
+        return data
+    lines = [b"HTTP/1.1 101 Switching Protocols"]
+    if b"date" in headers:
+        lines.append(b"Date: " + headers[b"date"])
+    lines += [b"Connection: Upgrade", b"Upgrade: websocket", b"Sec-WebSocket-Accept: " + accept]
+    return b"\r\n".join(lines) + b"\r\n\r\n" + rest
 
 
 class _TrafficLog:

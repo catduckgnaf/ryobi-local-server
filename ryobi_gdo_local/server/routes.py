@@ -141,11 +141,12 @@ def make_wsrpc_handler(store: StateStore, config: dict):
     """
 
     async def handle_wsrpc(request: web.Request) -> web.WebSocketResponse:
-        ws = web.WebSocketResponse(heartbeat=30)
+        # The cloud pings the opener every 20 seconds.
+        ws = web.WebSocketResponse(heartbeat=20)
         await ws.prepare(request)
 
-        # The opener authenticates with x-tc-* headers on the upgrade and then
-        # waits for the server to speak; apps and HA send srvWebSocketAuth.
+        # The opener authenticates with x-tc-* headers on the upgrade; apps
+        # and HA send srvWebSocketAuth instead.
         opener_id = request.headers.get("x-tc-varname", "")
         if opener_id:
             LOGGER.info(
@@ -156,18 +157,15 @@ def make_wsrpc_handler(store: StateStore, config: dict):
                 store.register_device_ws(opener_id, ws)
             else:
                 LOGGER.warning("Opener %s is not a configured device_id", opener_id)
-            await ws.send_str(json.dumps({
-                "jsonrpc": "2.0",
-                "method": "authorizedWebSocket",
-                "params": {"authorized": True, "socketId": f"local_{opener_id}"},
-            }))
         else:
             store.add_ws_client(ws)
             LOGGER.info("WebSocket client connected from %s", request.remote)
 
         try:
             async for msg in ws:
-                if msg.type == WSMsgType.TEXT:
+                if msg.type == WSMsgType.TEXT and opener_id:
+                    await _handle_opener_message(ws, msg.data, opener_id)
+                elif msg.type == WSMsgType.TEXT:
                     await _handle_ws_message(ws, msg.data, store, config)
                 elif msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
                     break
@@ -181,6 +179,42 @@ def make_wsrpc_handler(store: StateStore, config: dict):
         return ws
 
     return handle_wsrpc
+
+
+async def _handle_opener_message(ws: web.WebSocketResponse, raw: str, opener_id: str) -> None:
+    """
+    Handle a notification from the opener itself.
+
+    The opener announces itself (wifiClientStatusSet, srvSetPortStatus,
+    srvSetMasterUnitInfo, wskClientRegister, wskServerRegister) and then
+    streams srvSetModuleStatus. The cloud answers only wskServerRegister,
+    with authorizedWebSocket; it never replies to the notifications.
+    """
+    try:
+        msg: dict[str, Any] = json.loads(raw)
+    except (ValueError, TypeError):
+        LOGGER.warning("Non-JSON message from opener %s: %s", opener_id, raw)
+        return
+
+    method = msg.get("method", "")
+    params = msg.get("params") or {}
+    if method == "wskServerRegister":
+        await ws.send_str(json.dumps({
+            "jsonrpc": "2.0",
+            "method": "authorizedWebSocket",
+            "params": {"authorized": True, "socketId": f"local_{opener_id}"},
+        }))
+        LOGGER.info("Opener %s registered", opener_id)
+    elif method == "wifiClientStatusSet":
+        LOGGER.info(
+            "Opener %s Wi-Fi: ssid=%s rssi=%s ip=%s",
+            opener_id, params.get("ssid"), params.get("rssi"), params.get("ipAddr"),
+        )
+    elif method == "srvSetMasterUnitInfo":
+        LOGGER.info(
+            "Opener %s unit: app %s, nwp %s, %s ports",
+            opener_id, params.get("appVersion"), params.get("nwpVersion"), params.get("portCount"),
+        )
 
 
 async def _handle_ws_message(
