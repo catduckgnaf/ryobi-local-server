@@ -15,15 +15,18 @@ tlslite-ng and relays the plaintext to the HTTP site on localhost.
 from __future__ import annotations
 
 import logging
+import os
 import socket
 import ssl
 import threading
+import time
 
 from tlslite.api import HandshakeSettings, SessionCache, TLSConnection, X509CertChain, parsePEMKey
 
 LOGGER = logging.getLogger(__name__)
 
 CLOUD_HOST = "tti.tiwiconnect.com"
+UPGRADE_DELAY = float(os.environ.get("OPENER_UPGRADE_DELAY", "0.25"))
 
 
 def _handshake_settings() -> HandshakeSettings:
@@ -125,6 +128,10 @@ class OpenerTLSBridge:
                 while data := upstream.recv(16384):
                     if first and not self._cloud_relay_ip:
                         data = _cloud_style_upgrade(data)
+                        # The cloud's 101 arrives after an internet round trip.
+                        # Answered within a millisecond or two, the opener
+                        # usually never starts talking.
+                        time.sleep(UPGRADE_DELAY)
                         first = False
                     to_log.feed(data)
                     tls.sendall(data)
