@@ -193,7 +193,10 @@ async def _async_main(args: argparse.Namespace) -> None:
                 # OpenSSL cannot answer the opener's ClientHello; see tls_bridge.py.
                 from .tls_bridge import OpenerTLSBridge
 
-                OpenerTLSBridge(args.host, args.ssl_port, args.ssl_cert, args.ssl_key, args.port).start()
+                OpenerTLSBridge(
+                    args.host, args.ssl_port, args.ssl_cert, args.ssl_key, args.port,
+                    cloud_relay_ip=os.environ.get("OPENER_CLOUD_RELAY_IP", ""),
+                ).start()
                 LOGGER.info("HTTPS/WSS Server running on %s:%d (tlslite-ng bridge)", args.host, args.ssl_port)
             else:
                 ssl_ctx = _server_ssl_context(args.ssl_cert, args.ssl_key)

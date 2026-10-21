@@ -16,11 +16,14 @@ from __future__ import annotations
 
 import logging
 import socket
+import ssl
 import threading
 
 from tlslite.api import HandshakeSettings, SessionCache, TLSConnection, X509CertChain, parsePEMKey
 
 LOGGER = logging.getLogger(__name__)
+
+CLOUD_HOST = "tti.tiwiconnect.com"
 
 
 def _handshake_settings() -> HandshakeSettings:
@@ -34,10 +37,21 @@ def _handshake_settings() -> HandshakeSettings:
 class OpenerTLSBridge:
     """Terminate TLS for the opener and relay it to the plain HTTP site."""
 
-    def __init__(self, host: str, port: int, certfile: str, keyfile: str, upstream_port: int) -> None:
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        certfile: str,
+        keyfile: str,
+        upstream_port: int,
+        cloud_relay_ip: str = "",
+    ) -> None:
         self._host = host
         self._port = port
         self._upstream_port = upstream_port
+        # Capture mode: relay the opener's own session to the Ryobi cloud and
+        # log it, to learn what the cloud says to the opener.
+        self._cloud_relay_ip = cloud_relay_ip
         with open(certfile, encoding="utf-8") as handle:
             self._chain = X509CertChain()
             self._chain.parsePemList(handle.read())
@@ -84,12 +98,19 @@ class OpenerTLSBridge:
         )
 
         try:
-            upstream = socket.create_connection(("127.0.0.1", self._upstream_port), timeout=10)
+            if self._cloud_relay_ip:
+                cloud = socket.create_connection((self._cloud_relay_ip, 443), timeout=10)
+                upstream = ssl.create_default_context().wrap_socket(cloud, server_hostname=CLOUD_HOST)
+                LOGGER.info("Relaying opener %s to the Ryobi cloud at %s", addr, self._cloud_relay_ip)
+            else:
+                upstream = socket.create_connection(("127.0.0.1", self._upstream_port), timeout=10)
         except OSError as err:
-            LOGGER.error("Could not reach the HTTP site on port %d: %s", self._upstream_port, err)
+            LOGGER.error("Could not open the upstream for opener %s: %s", addr, err)
             tls.close()
             return
         upstream.settimeout(None)
+        from_log = _TrafficLog("from opener", addr)
+        to_log = _TrafficLog("to opener", addr)
 
         def close_both() -> None:
             for closer in (tls.close, upstream.close):
@@ -107,7 +128,7 @@ class OpenerTLSBridge:
                         # most embedded clients expect "Upgrade".
                         data = data.replace(b"\r\nConnection: upgrade\r\n", b"\r\nConnection: Upgrade\r\n", 1)
                         first = False
-                    LOGGER.debug("to opener %s: %s", addr, _preview(data))
+                    to_log.feed(data)
                     tls.sendall(data)
             except Exception as err:  # noqa: BLE001
                 LOGGER.debug("to opener %s ended: %r", addr, err)
@@ -117,7 +138,7 @@ class OpenerTLSBridge:
         threading.Thread(target=to_opener, daemon=True).start()
         try:
             while data := tls.recv(16384):
-                LOGGER.debug("from opener %s: %s", addr, _preview(data))
+                from_log.feed(data)
                 upstream.sendall(data)
         except Exception as err:  # noqa: BLE001
             LOGGER.debug("from opener %s ended: %r", addr, err)
@@ -126,10 +147,52 @@ class OpenerTLSBridge:
             LOGGER.info("Opener TLS connection from %s closed", addr)
 
 
-def _preview(data: bytes, limit: int = 600) -> str:
-    """Printable text when the bytes are text, hex otherwise."""
-    head = data[:limit]
-    text = head.decode("latin-1")
-    if all(ch.isprintable() or ch in "\r\n\t" for ch in text):
-        return f"{len(data)}B {text!r}"
-    return f"{len(data)}B hex {head.hex()}"
+class _TrafficLog:
+    """Debug-log one direction: the HTTP upgrade, then each WebSocket frame."""
+
+    def __init__(self, direction: str, addr: tuple) -> None:
+        self._label = f"{direction} {addr}"
+        self._buf = b""
+        self._in_frames = False
+
+    def feed(self, data: bytes) -> None:
+        if not LOGGER.isEnabledFor(logging.DEBUG):
+            return
+        self._buf += data
+        if not self._in_frames:
+            head, sep, rest = self._buf.partition(b"\r\n\r\n")
+            if not sep:
+                return
+            LOGGER.debug("%s: %r", self._label, head.decode("latin-1"))
+            self._buf, self._in_frames = rest, True
+        while frame := self._next_frame():
+            opcode, payload = frame
+            if opcode == 1:
+                shown = payload[:2000].decode("utf-8", "replace")
+            else:
+                shown = payload[:400].hex()
+            LOGGER.debug("%s: ws op=%d %dB %s", self._label, opcode, len(payload), shown)
+
+    def _next_frame(self) -> tuple[int, bytes] | None:
+        buf = self._buf
+        if len(buf) < 2:
+            return None
+        opcode, masked, size, pos = buf[0] & 0x0F, buf[1] & 0x80, buf[1] & 0x7F, 2
+        if size == 126:
+            if len(buf) < 4:
+                return None
+            size, pos = int.from_bytes(buf[2:4], "big"), 4
+        elif size == 127:
+            if len(buf) < 10:
+                return None
+            size, pos = int.from_bytes(buf[2:10], "big"), 10
+        mask = b""
+        if masked:
+            mask, pos = buf[pos:pos + 4], pos + 4
+        if len(buf) < pos + size:
+            return None
+        payload = buf[pos:pos + size]
+        if masked:
+            payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+        self._buf = buf[pos + size:]
+        return opcode, payload
