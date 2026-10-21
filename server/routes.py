@@ -153,6 +153,8 @@ def make_wsrpc_handler(store: StateStore, config: dict):
                     await _handle_ws_message(ws, msg.data, store, config)
                 elif msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
                     break
+                else:
+                    LOGGER.debug("WS %s frame from %s: %r", msg.type.name, request.remote, msg.data)
         finally:
             store.unregister_device_ws(ws)
             store.remove_ws_client(ws)

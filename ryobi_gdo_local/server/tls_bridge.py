@@ -101,18 +101,29 @@ class OpenerTLSBridge:
         def to_opener() -> None:
             try:
                 while data := upstream.recv(16384):
+                    LOGGER.debug("to opener %s: %s", addr, _preview(data))
                     tls.sendall(data)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as err:  # noqa: BLE001
+                LOGGER.debug("to opener %s ended: %r", addr, err)
             finally:
                 close_both()
 
         threading.Thread(target=to_opener, daemon=True).start()
         try:
             while data := tls.recv(16384):
+                LOGGER.debug("from opener %s: %s", addr, _preview(data))
                 upstream.sendall(data)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as err:  # noqa: BLE001
+            LOGGER.debug("from opener %s ended: %r", addr, err)
         finally:
             close_both()
             LOGGER.info("Opener TLS connection from %s closed", addr)
+
+
+def _preview(data: bytes, limit: int = 600) -> str:
+    """Printable text when the bytes are text, hex otherwise."""
+    head = data[:limit]
+    text = head.decode("latin-1")
+    if all(ch.isprintable() or ch in "\r\n\t" for ch in text):
+        return f"{len(data)}B {text!r}"
+    return f"{len(data)}B hex {head.hex()}"
