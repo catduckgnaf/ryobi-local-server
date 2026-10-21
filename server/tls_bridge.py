@@ -18,7 +18,7 @@ import logging
 import socket
 import threading
 
-from tlslite.api import HandshakeSettings, TLSConnection, X509CertChain, parsePEMKey
+from tlslite.api import HandshakeSettings, SessionCache, TLSConnection, X509CertChain, parsePEMKey
 
 LOGGER = logging.getLogger(__name__)
 
@@ -44,6 +44,9 @@ class OpenerTLSBridge:
         with open(keyfile, encoding="utf-8") as handle:
             self._key = parsePEMKey(handle.read(), private=True)
         self._settings = _handshake_settings()
+        # The cloud's ServerHello carries a 32-byte session ID; tlslite-ng
+        # only sends one when it has a session cache.
+        self._sessions = SessionCache()
         self._sock: socket.socket | None = None
 
     def start(self) -> None:
@@ -64,7 +67,12 @@ class OpenerTLSBridge:
         raw.settimeout(30)
         tls = TLSConnection(raw)
         try:
-            tls.handshakeServer(certChain=self._chain, privateKey=self._key, settings=self._settings)
+            tls.handshakeServer(
+                certChain=self._chain,
+                privateKey=self._key,
+                settings=self._settings,
+                sessionCache=self._sessions,
+            )
         except Exception as err:  # noqa: BLE001 - any failure ends this connection
             LOGGER.warning("TLS handshake failed from %s: %r", addr, err)
             raw.close()
