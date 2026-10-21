@@ -189,11 +189,17 @@ async def _async_main(args: argparse.Namespace) -> None:
     # 2. Main HTTPS / WSS Site (port 443) with TLS for physical GDO hardware
     if args.ssl_cert and os.path.exists(args.ssl_cert) and args.ssl_key and os.path.exists(args.ssl_key):
         try:
-            import ssl
-            ssl_ctx = _server_ssl_context(args.ssl_cert, args.ssl_key)
-            site_https = web.TCPSite(runner, host=args.host, port=args.ssl_port, ssl_context=ssl_ctx)
-            await site_https.start()
-            LOGGER.info("HTTPS/WSS Server running on %s:%d (TLS active)", args.host, args.ssl_port)
+            if os.environ.get("TLS_ENGINE", "tlslite") == "tlslite":
+                # OpenSSL cannot answer the opener's ClientHello; see tls_bridge.py.
+                from .tls_bridge import OpenerTLSBridge
+
+                OpenerTLSBridge(args.host, args.ssl_port, args.ssl_cert, args.ssl_key, args.port).start()
+                LOGGER.info("HTTPS/WSS Server running on %s:%d (tlslite-ng bridge)", args.host, args.ssl_port)
+            else:
+                ssl_ctx = _server_ssl_context(args.ssl_cert, args.ssl_key)
+                site_https = web.TCPSite(runner, host=args.host, port=args.ssl_port, ssl_context=ssl_ctx)
+                await site_https.start()
+                LOGGER.info("HTTPS/WSS Server running on %s:%d (TLS active)", args.host, args.ssl_port)
         except Exception as err:
             LOGGER.error("Failed to start HTTPS listener on port %d: %s", args.ssl_port, err)
 
