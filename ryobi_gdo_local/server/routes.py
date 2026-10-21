@@ -144,8 +144,26 @@ def make_wsrpc_handler(store: StateStore, config: dict):
         ws = web.WebSocketResponse(heartbeat=30)
         await ws.prepare(request)
 
-        store.add_ws_client(ws)
-        LOGGER.info("WebSocket client connected from %s", request.remote)
+        # The opener authenticates with x-tc-* headers on the upgrade and then
+        # waits for the server to speak; apps and HA send srvWebSocketAuth.
+        opener_id = request.headers.get("x-tc-varname", "")
+        if opener_id:
+            LOGGER.info(
+                "Opener %s connected (fw %s, transform %s)",
+                opener_id, request.headers.get("x-tc-fw"), request.headers.get("x-tc-transform"),
+            )
+            if store.get_device(opener_id):
+                store.register_device_ws(opener_id, ws)
+            else:
+                LOGGER.warning("Opener %s is not a configured device_id", opener_id)
+            await ws.send_str(json.dumps({
+                "jsonrpc": "2.0",
+                "method": "authorizedWebSocket",
+                "params": {"authorized": True, "socketId": f"local_{opener_id}"},
+            }))
+        else:
+            store.add_ws_client(ws)
+            LOGGER.info("WebSocket client connected from %s", request.remote)
 
         try:
             async for msg in ws:

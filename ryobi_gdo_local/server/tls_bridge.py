@@ -99,8 +99,14 @@ class OpenerTLSBridge:
                     pass
 
         def to_opener() -> None:
+            first = True
             try:
                 while data := upstream.recv(16384):
+                    if first:
+                        # aiohttp answers "Connection: upgrade"; the cloud and
+                        # most embedded clients expect "Upgrade".
+                        data = data.replace(b"\r\nConnection: upgrade\r\n", b"\r\nConnection: Upgrade\r\n", 1)
+                        first = False
                     LOGGER.debug("to opener %s: %s", addr, _preview(data))
                     tls.sendall(data)
             except Exception as err:  # noqa: BLE001
