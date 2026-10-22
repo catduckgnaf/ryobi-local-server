@@ -36,6 +36,8 @@ class GarageDoorState:
 
     # Core door state: "0"=closed, "1"=open, "2"=closing, "3"=opening, "4"=fault
     door_state: str = "0"
+    door_state_raw: int | None = None
+    door_moving: bool = False
     door_position: int = 1
     max_door_position: int = 93
     motor_status: int = 1
@@ -43,6 +45,7 @@ class GarageDoorState:
     # Accessory states
     light_state: bool = False
     battery_level: int | None = 100    # percentage, default 100 for backup charger
+    wifi_ssid: str | None = None
     wifi_rssi: int | None = -55        # dBm, default strong signal
     safety: bool = False                # safety sensor blocked
     motion: bool = False                # motion sensor
@@ -103,7 +106,7 @@ class GarageDoorState:
         door_key = (self.modules or {}).get("garageDoor", "garageDoor_7")
         dtm[door_key] = {
             "at": {
-                "doorState": {"value": int(self.door_state)},
+                "doorState": {"value": int(self.door_state) if self.door_state in ("0", "1", "2", "3", "4") else None},
                 "doorPosition": {"value": self.door_position},
                 "maxDoorPosition": {"value": self.max_door_position},
                 "motorStatus": {"value": self.motor_status},

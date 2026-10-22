@@ -82,6 +82,16 @@ def _server_ssl_context(certfile: str, keyfile: str):
     return ctx
 
 
+def opener_mode(config: dict) -> str:
+    """Legacy capture flag wins; auto preserves existing local/cloud selection."""
+    mode = os.environ.get("OPENER_MODE", config.get("opener_mode", "auto"))
+    if mode not in ("auto", "cloud", "takeover", "local"):
+        raise ValueError("opener_mode must be auto, cloud, takeover or local")
+    if config.get("cloud_relay") or os.environ.get("OPENER_CLOUD_RELAY_IP"):
+        return "cloud"
+    return "local" if mode == "auto" else mode
+
+
 def _load_config(config_path: str) -> dict:
     """Load YAML config file, merging with environment variable overrides."""
     config: dict = {}
@@ -111,6 +121,8 @@ def _load_config(config_path: str) -> dict:
     if os.environ.get("RYOBI_POLL_INTERVAL"):
         config["poll_interval"] = int(os.environ["RYOBI_POLL_INTERVAL"])
 
+    config["opener_mode"] = opener_mode(config)
+    config["cloud_ip"] = os.environ.get("TTI_CLOUD_IP", config.get("cloud_ip", ""))
     return config
 
 
@@ -195,7 +207,7 @@ async def _async_main(args: argparse.Namespace) -> None:
 
                 OpenerTLSBridge(
                     args.host, args.ssl_port, args.ssl_cert, args.ssl_key, args.port,
-                    cloud_relay_ip=os.environ.get("OPENER_CLOUD_RELAY_IP", ""),
+                    cloud_relay_ip=(config["cloud_ip"] if config["opener_mode"] == "cloud" else ""),
                 ).start()
                 LOGGER.info("HTTPS/WSS Server running on %s:%d (tlslite-ng bridge)", args.host, args.ssl_port)
             else:

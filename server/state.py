@@ -8,6 +8,8 @@ State is persisted to a JSON file so it survives restarts.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import json
 import logging
 import os
@@ -34,6 +36,8 @@ class StateStore:
         # Physical hardware WebSocket connections (device_id -> ws)
         self._device_sockets: dict[str, Any] = {}
         self._lock = asyncio.Lock()
+        self._takeover_sessions: set[str] = set()
+        self.require_physical = False
 
     # ------------------------------------------------------------------
     # Device management
@@ -75,6 +79,30 @@ class StateStore:
     async def handle_device_push(self, device_id: str, raw_params: dict[str, Any]) -> None:
         """Parse incoming push notifications from the physical hardware opener."""
         updates: dict[str, Any] = {}
+        if raw_params.get("msgType") == 17:
+            try:
+                data = base64.b64decode(raw_params["moduleMsg"], validate=True)
+            except (KeyError, ValueError, TypeError, binascii.Error):
+                return
+            if raw_params.get("moduleType") == 5 and raw_params.get("portId") == 7 and len(data) == 14:
+                if data[3] in (0, 1):
+                    updates["light_state"] = bool(data[3])
+                if data[5] != 0xfe:
+                    updates["door_state_raw"] = data[5]
+                    updates["door_moving"] = data[5] == 3
+                    # Capture proves open=1 and moving=3, not direction or closed.
+                    updates["door_state"] = "1" if data[5] == 1 else "unknown"
+                if data[9] != 0xfe:
+                    updates["door_position"] = data[9]
+            elif raw_params.get("moduleType") == 6 and raw_params.get("portId") == 8 and len(data) == 1:
+                if data[0] <= 100:
+                    updates["battery_level"] = data[0]
+            elif raw_params.get("moduleType") == 1 and raw_params.get("portId") == 3 and data:
+                if data[0] in (0, 1):
+                    updates["park_assist"] = bool(data[0])
+            if updates:
+                await self.update_state(device_id, updates)
+            return
         for key, val_obj in raw_params.items():
             if key in ("varName", "topic", "id") or not isinstance(val_obj, dict):
                 continue
@@ -288,6 +316,34 @@ class StateStore:
             LOGGER.warning("apply_command: unknown device %s", device_id)
             return False
 
+        device_ws = self._device_sockets.get(device_id)
+        if device_ws and not device_ws.closed:
+            encoded = None
+            if attr == "lightState" and module in ("garageLight", "garageDoor"):
+                if value in (True, 1, "1", "true", "on"):
+                    encoded = "/wH///8="
+                elif value in (False, 0, "0", "false", "off"):
+                    encoded = "/wD///8="
+            elif module == "garageDoor" and attr in ("doorState", "doorCommand"):
+                if str(value).lower() in ("1", "true", "open"):
+                    encoded = "////Af8="
+            if encoded is None:
+                LOGGER.warning("Uncaptured physical command rejected: %s.%s", module, attr)
+                return False
+            try:
+                await device_ws.send_str(json.dumps({
+                    "jsonrpc": "2.0", "id": 0, "method": "gdoModuleCommand",
+                    "params": {"msgType": 16, "moduleType": 5, "portId": 7,
+                               "moduleMsg": encoded, "topic": device_id},
+                }))
+                return True  # Only telemetry may update hardware state.
+            except Exception as err:
+                LOGGER.warning("Command transport failed for %s: %s", device_id, err)
+                return False
+
+        if self.require_physical:
+            return False
+
         fan_port: int | None = None
         if module == "fan":
             updates, fan_port = self._fan_command_updates(device, attr, value, port_id)
@@ -313,38 +369,6 @@ class StateStore:
             else:
                 norm_value = value
             updates = {field: norm_value}
-
-        # Forward command down to physical opener if connected
-        device_ws = self._device_sockets.get(device_id)
-        if device_ws and not device_ws.closed:
-            fan_forward_port = fan_port if fan_port is not None else 3
-            module_info = {
-                "garageDoor": (5, 7, {"doorCommand": 1 if str(value) in ("1", "true", "open") else 0}),
-                "garageLight": (5, 7, {"lightState": 1 if norm_value else 0}),
-                "parkAssistLaser": (1, 3, {"moduleState": 1 if norm_value else 0}),
-                "inflator": (4, 0, {"moduleState": 1 if norm_value else 0}),
-                "btSpeaker": (2, 6, {"moduleState": 1 if norm_value else 0} if attr != "micEnable" else {"micEnable": 1 if norm_value else 0}),
-                "fan": (3, fan_forward_port, {"speed": norm_value} if attr == "speed" else {"moduleState": 1 if norm_value else 0}),
-            }
-            if module in module_info:
-                mod_type, forward_port, mod_msg = module_info[module]
-                cmd_payload = {
-                    "jsonrpc": "2.0",
-                    "id": int(asyncio.get_event_loop().time() * 1000),
-                    "method": "gdoModuleCommand",
-                    "params": {
-                        "msgType": 16,
-                        "moduleType": mod_type,
-                        "portId": forward_port,
-                        "moduleMsg": mod_msg,
-                        "topic": device_id,
-                    },
-                }
-                try:
-                    await device_ws.send_str(json.dumps(cmd_payload))
-                    LOGGER.info("Forwarded command to physical device %s: %s", device_id, cmd_payload)
-                except Exception as err:
-                    LOGGER.warning("Failed to forward command to physical device %s: %s", device_id, err)
 
         return await self.update_state(device_id, updates)
 

@@ -33,6 +33,7 @@ options:
   command_webhook_timeout: 3
   fan_ports: ""
   cloud_relay: false
+  opener_mode: auto
 schema:
   device_id: "str"
   device_name: "str"
@@ -46,3 +47,4 @@ schema:
   opener_cert_pem: "str?"
   opener_key_pem: "password?"
   cloud_relay: "bool?"
+  opener_mode: "list(auto|cloud|takeover|local)?"
