@@ -141,18 +141,64 @@ def make_wsrpc_handler(store: StateStore, config: dict):
     """
 
     async def handle_wsrpc(request: web.Request) -> web.WebSocketResponse:
-        ws = web.WebSocketResponse(heartbeat=30)
+        opener_id = request.headers.get("x-tc-varname", "")
+        has_opener_headers = any(key.lower().startswith("x-tc-") for key in request.headers)
+        if config.get("opener_mode") == "takeover" and has_opener_headers:
+            from .takeover import MAX_MESSAGE, connect_cloud, run_takeover
+
+            if (not opener_id
+                    or store.get_device(opener_id) is None
+                    or not request.headers.get("x-tc-apikey")
+                    or request.headers.get("x-tc-transform") != "tti-gdo-rpc"):
+                raise web.HTTPForbidden(text="Unexpected opener identity")
+            active = store._takeover_sessions
+            if opener_id in active:
+                raise web.HTTPConflict(text="Opener session already active")
+            active.add(opener_id)
+            ws = web.WebSocketResponse(heartbeat=20, max_msg_size=MAX_MESSAGE, compress=False)
+            try:
+                await ws.prepare(request)
+                headers = {key.lower(): val for key, val in request.headers.items()
+                           if key.lower().startswith("x-tc-")}
+                async with connect_cloud(headers, config.get("cloud_ip", "")) as cloud:
+                    await run_takeover(ws, cloud, opener_id, store)
+            except (OSError, ValueError, aiohttp.ClientError):
+                LOGGER.warning("Takeover connection failed for %s", opener_id)
+            finally:
+                active.discard(opener_id)
+                await ws.close()
+            return ws
+
+        # The cloud pings the opener every 20 seconds.
+        ws = web.WebSocketResponse(heartbeat=20)
         await ws.prepare(request)
 
-        store.add_ws_client(ws)
-        LOGGER.info("WebSocket client connected from %s", request.remote)
+        # The opener authenticates with x-tc-* headers on the upgrade; apps
+        # and HA send srvWebSocketAuth instead.
+        opener_id = request.headers.get("x-tc-varname", "")
+        if opener_id:
+            LOGGER.info(
+                "Opener %s connected (fw %s, transform %s)",
+                opener_id, request.headers.get("x-tc-fw"), request.headers.get("x-tc-transform"),
+            )
+            if store.get_device(opener_id):
+                store.register_device_ws(opener_id, ws)
+            else:
+                LOGGER.warning("Opener %s is not a configured device_id", opener_id)
+        else:
+            store.add_ws_client(ws)
+            LOGGER.info("WebSocket client connected from %s", request.remote)
 
         try:
             async for msg in ws:
-                if msg.type == WSMsgType.TEXT:
+                if msg.type == WSMsgType.TEXT and opener_id:
+                    await _handle_opener_message(ws, msg.data, opener_id, store)
+                elif msg.type == WSMsgType.TEXT:
                     await _handle_ws_message(ws, msg.data, store, config)
                 elif msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
                     break
+                else:
+                    LOGGER.debug("WS %s frame from %s: %r", msg.type.name, request.remote, msg.data)
         finally:
             store.unregister_device_ws(ws)
             store.remove_ws_client(ws)
@@ -161,6 +207,53 @@ def make_wsrpc_handler(store: StateStore, config: dict):
         return ws
 
     return handle_wsrpc
+
+
+async def _handle_opener_message(
+    ws: web.WebSocketResponse, raw: str, opener_id: str, store: StateStore
+) -> None:
+    """
+    Handle a notification from the opener itself.
+
+    The opener announces itself (wifiClientStatusSet, srvSetPortStatus,
+    srvSetMasterUnitInfo, wskClientRegister, wskServerRegister) and then
+    streams srvSetModuleStatus. The cloud answers only wskServerRegister,
+    with authorizedWebSocket; it never replies to the notifications.
+    """
+    try:
+        msg: dict[str, Any] = json.loads(raw)
+    except (ValueError, TypeError):
+        LOGGER.warning("Non-JSON message from opener %s: %s", opener_id, raw)
+        return
+
+    method = msg.get("method", "")
+    params = msg.get("params") or {}
+    if method == "wskServerRegister":
+        await ws.send_str(json.dumps({
+            "jsonrpc": "2.0",
+            "method": "authorizedWebSocket",
+            "params": {"authorized": True, "socketId": f"local_{opener_id}"},
+        }))
+        LOGGER.info("Opener %s registered", opener_id)
+    elif method == "srvSetModuleStatus":
+        await store.handle_device_push(opener_id, params)
+    elif method == "wifiClientStatusSet":
+        updates = {}
+        if isinstance(params.get("rssi"), int) and not isinstance(params["rssi"], bool):
+            updates["wifi_rssi"] = params["rssi"]
+        if isinstance(params.get("ssid"), str):
+            updates["wifi_ssid"] = params["ssid"]
+        if updates:
+            await store.update_state(opener_id, updates)
+        LOGGER.info(
+            "Opener %s Wi-Fi status received: rssi=%s",
+            opener_id, params.get("rssi"),
+        )
+    elif method == "srvSetMasterUnitInfo":
+        LOGGER.info(
+            "Opener %s unit: app %s, nwp %s, %s ports",
+            opener_id, params.get("appVersion"), params.get("nwpVersion"), params.get("portCount"),
+        )
 
 
 async def _handle_ws_message(
@@ -203,13 +296,22 @@ async def _handle_ws_message(
             })
         )
 
-        if authorized and var_name and store.get_device(var_name):
+        if (authorized and var_name and store.get_device(var_name)
+                and config.get("opener_mode") != "takeover"):
             store.register_device_ws(var_name, ws)
 
         if not authorized:
             LOGGER.warning("WS auth rejected: invalid API key for %s", var_name)
 
     elif method in ("wskAttributeUpdateNtfy", "gdoModuleMsg", "gdoModuleState"):
+        if config.get("opener_mode") == "takeover":
+            # Takeover telemetry enters exclusively through the cloud-authorized
+            # opener reader, never through an ordinary HA/client connection.
+            await ws.send_str(json.dumps({
+                "jsonrpc": "2.0", "id": msg_id,
+                "error": {"code": -32600, "message": "Hardware telemetry requires authenticated opener"},
+            }))
+            return
         # Real-time state push from physical opener hardware
         var_name = params.get("varName") or params.get("topic")
         if var_name:

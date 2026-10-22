@@ -41,6 +41,7 @@ async def create_app(config: dict[str, Any]) -> web.Application:
       devices: list[dict]         - List of device definitions (see config.yaml.example)
     """
     store = StateStore()
+    store.require_physical = config.get("opener_mode") == "takeover"
 
     # Register devices from config
     for dev_cfg in config.get("devices", []):

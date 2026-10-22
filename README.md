@@ -6,6 +6,33 @@ Addresses [issue #65](https://github.com/catduckgnaf/ryobi_gdo/issues/65) — _"
 
 **Compatible hardware:** Ryobi GDO125, GDO201, and GD200 garage-door openers.
 
+## Experimental authenticated takeover (not hardware validated)
+
+`opener_mode: takeover` relays registration to the real cloud, waits for explicit
+cloud authorization, and then retains the opener WebSocket for local commands.
+It still requires the cloud at every reconnect. It is **not cloud-independent**.
+The existing `cloud_relay: true` / `OPENER_CLOUD_RELAY_IP` capture override wins;
+leave it enabled to preserve the working cloud path. `auto` preserves legacy
+behavior, `cloud` explicitly selects relay, and `local` selects the old emulator.
+
+Takeover requires a trusted opener certificate and an externally resolved public
+IPv4 address in `TTI_CLOUD_IP` (or `cloud_ip` in standalone YAML). TLS to the real
+cloud verifies `tti.tiwiconnect.com`; it never follows the local DNS rewrite.
+The add-on already resolves this public address for its SNI passthrough.
+
+Only captured light on/off and door **open** commands are sent on the physical
+socket. Close, vacation and fan commands are rejected rather than guessed.
+Telemetry updates state; sending a command does not echo a successful operation.
+Raw door value 1 was observed open; value 3 means moving with unknown direction.
+Other unobserved values remain unknown. Existing persisted values are cached,
+not proof of a live opener session.
+
+Offline tests cover lifecycle, authorization failures, mode selection, captured
+bytes and telemetry. They do not establish that a real opener stays connected
+after cloud handoff. Deployment and live validation are separate steps: verify
+home-WiFi phone fallback first, then light with returned telemetry; door operation
+requires someone present. Never use unverified HA state for auto-close safety.
+
 ---
 
 ## Quick Start

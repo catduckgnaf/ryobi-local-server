@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import ipaddress
 import os
 import sys
 
@@ -82,6 +83,16 @@ def _server_ssl_context(certfile: str, keyfile: str):
     return ctx
 
 
+def opener_mode(config: dict) -> str:
+    """Legacy capture flag wins; auto preserves existing local/cloud selection."""
+    mode = os.environ.get("OPENER_MODE", config.get("opener_mode", "auto"))
+    if mode not in ("auto", "cloud", "takeover", "local"):
+        raise ValueError("opener_mode must be auto, cloud, takeover or local")
+    if config.get("cloud_relay") or "OPENER_CLOUD_RELAY_IP" in os.environ:
+        return "cloud"
+    return "local" if mode == "auto" else mode
+
+
 def _load_config(config_path: str) -> dict:
     """Load YAML config file, merging with environment variable overrides."""
     config: dict = {}
@@ -111,6 +122,15 @@ def _load_config(config_path: str) -> dict:
     if os.environ.get("RYOBI_POLL_INTERVAL"):
         config["poll_interval"] = int(os.environ["RYOBI_POLL_INTERVAL"])
 
+    config["opener_mode"] = opener_mode(config)
+    config["cloud_ip"] = os.environ.get("TTI_CLOUD_IP", config.get("cloud_ip", ""))
+    if config["opener_mode"] in ("cloud", "takeover"):
+        try:
+            address = ipaddress.IPv4Address(config["cloud_ip"])
+        except ipaddress.AddressValueError as err:
+            raise ValueError("Cloud mode requires a public IPv4 address") from err
+        if not address.is_global or address.is_multicast:
+            raise ValueError("Cloud mode requires a public IPv4 address")
     return config
 
 
@@ -189,11 +209,20 @@ async def _async_main(args: argparse.Namespace) -> None:
     # 2. Main HTTPS / WSS Site (port 443) with TLS for physical GDO hardware
     if args.ssl_cert and os.path.exists(args.ssl_cert) and args.ssl_key and os.path.exists(args.ssl_key):
         try:
-            import ssl
-            ssl_ctx = _server_ssl_context(args.ssl_cert, args.ssl_key)
-            site_https = web.TCPSite(runner, host=args.host, port=args.ssl_port, ssl_context=ssl_ctx)
-            await site_https.start()
-            LOGGER.info("HTTPS/WSS Server running on %s:%d (TLS active)", args.host, args.ssl_port)
+            if os.environ.get("TLS_ENGINE", "tlslite") == "tlslite":
+                # OpenSSL cannot answer the opener's ClientHello; see tls_bridge.py.
+                from .tls_bridge import OpenerTLSBridge
+
+                OpenerTLSBridge(
+                    args.host, args.ssl_port, args.ssl_cert, args.ssl_key, args.port,
+                    cloud_relay_ip=(config["cloud_ip"] if config["opener_mode"] == "cloud" else ""),
+                ).start()
+                LOGGER.info("HTTPS/WSS Server running on %s:%d (tlslite-ng bridge)", args.host, args.ssl_port)
+            else:
+                ssl_ctx = _server_ssl_context(args.ssl_cert, args.ssl_key)
+                site_https = web.TCPSite(runner, host=args.host, port=args.ssl_port, ssl_context=ssl_ctx)
+                await site_https.start()
+                LOGGER.info("HTTPS/WSS Server running on %s:%d (TLS active)", args.host, args.ssl_port)
         except Exception as err:
             LOGGER.error("Failed to start HTTPS listener on port %d: %s", args.ssl_port, err)
 

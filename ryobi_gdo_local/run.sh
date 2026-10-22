@@ -194,18 +194,56 @@ if [ ! -f "${SSL_DIR}/server.crt" ] || [ ! -f "${SSL_DIR}/server.key" ]; then
         -addext "subjectAltName=DNS:tti.tiwiconnect.com,DNS:tti-prod2.thomisidae.com,IP:${HOST_IP}" || true
 fi
 
+# The opener checks the server chain against a root it ships with and refuses
+# the self-signed certificate. opener_cert_pem takes a full chain (leaf first)
+# and opener_key_pem its key; real newlines or literal \n both work.
+SSL_CERT="${SSL_DIR}/server.crt"
+SSL_KEY="${SSL_DIR}/server.key"
+OPENER_CERT_PEM="$(bashio::config 'opener_cert_pem' '')"
+OPENER_KEY_PEM="$(bashio::config 'opener_key_pem' '')"
+if [ -n "${OPENER_CERT_PEM}" ] && [ -n "${OPENER_KEY_PEM}" ]; then
+    printf '%s\n' "${OPENER_CERT_PEM}" | sed 's/\\n/\n/g' > "${SSL_DIR}/opener.crt"
+    printf '%s\n' "${OPENER_KEY_PEM}" | sed 's/\\n/\n/g' > "${SSL_DIR}/opener.key"
+    chmod 600 "${SSL_DIR}/opener.key"
+    SSL_CERT="${SSL_DIR}/opener.crt"
+    SSL_KEY="${SSL_DIR}/opener.key"
+    bashio::log.info "Opener certificate: $(grep -c 'BEGIN CERTIFICATE' "${SSL_CERT}") in chain, $(openssl x509 -in "${SSL_CERT}" -noout -subject -issuer | tr '\n' ' ')"
+fi
+
 # ---------------------------------------------------------------------------
 # Start the Ryobi local server (HTTP 80 + HTTPS 443 + Ingress 8099)
 # ---------------------------------------------------------------------------
 bashio::log.info "Starting Ryobi server on ports ${SERVER_PORT} (HTTP), 443 (HTTPS), and ${INGRESS_PORT} (Ingress)..."
+
+# The real cloud address, resolved past this add-on's own DNS. Phones and
+# browsers (they send SNI) are passed straight through to it on 443.
+TTI_CLOUD_IP="$(nslookup tti.tiwiconnect.com 1.1.1.1 2>/dev/null \
+    | awk '/^Address/ && $2 ~ /^[0-9.]+$/ { ip = $2 } END { print ip }')"
+export TTI_CLOUD_IP
+
+# auto preserves the previous cloud_relay selection; takeover is opt-in.
+OPENER_MODE="$(bashio::config 'opener_mode' 'auto')"
+export OPENER_MODE
+
+# cloud_relay: pass the opener's session through to the real cloud and log it
+# (debug level) to learn the protocol.
+if bashio::config.true 'cloud_relay'; then
+    if [ -z "${TTI_CLOUD_IP}" ]; then
+        bashio::log.fatal "Cloud relay requires a resolved public cloud IPv4 address; refusing local fallback."
+        exit 1
+    fi
+    OPENER_CLOUD_RELAY_IP="${TTI_CLOUD_IP}"
+    export OPENER_CLOUD_RELAY_IP
+    bashio::log.warning "cloud_relay is on: the opener is relayed to the Ryobi cloud (${OPENER_CLOUD_RELAY_IP:-not resolved}), not controlled locally"
+fi
 
 python3 -m server.main \
     --config "${CONFIG_FILE}" \
     --host 0.0.0.0 \
     --port "${SERVER_PORT}" \
     --ssl-port 443 \
-    --ssl-cert "${SSL_DIR}/server.crt" \
-    --ssl-key "${SSL_DIR}/server.key" \
+    --ssl-cert "${SSL_CERT}" \
+    --ssl-key "${SSL_KEY}" \
     --ingress-port "${INGRESS_PORT}" \
     --log-level "$(echo ${LOG_LEVEL} | tr '[:lower:]' '[:upper:]')" &
 
