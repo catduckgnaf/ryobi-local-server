@@ -27,6 +27,8 @@ LOGGER = logging.getLogger(__name__)
 
 CLOUD_HOST = "tti.tiwiconnect.com"
 UPGRADE_DELAY = float(os.environ.get("OPENER_UPGRADE_DELAY", "0.25"))
+# The real cloud address, resolved past this add-on's own DNS by run.sh.
+CLOUD_IP = os.environ.get("TTI_CLOUD_IP", "")
 
 
 def _handshake_settings() -> HandshakeSettings:
@@ -82,6 +84,12 @@ class OpenerTLSBridge:
 
     def _serve(self, raw: socket.socket, addr: tuple) -> None:
         raw.settimeout(30)
+        # The opener sends no SNI. Phones and browsers name the host and check
+        # the certificate's name, so they get the real cloud untouched.
+        sni = _peek_sni(raw)
+        if sni:
+            self._pass_through(raw, addr, sni)
+            return
         tls = TLSConnection(raw)
         try:
             tls.handshakeServer(
@@ -150,6 +158,69 @@ class OpenerTLSBridge:
         finally:
             close_both()
             LOGGER.info("Opener TLS connection from %s closed", addr)
+
+
+    def _pass_through(self, raw: socket.socket, addr: tuple, sni: str) -> None:
+        cloud_ip = CLOUD_IP or self._cloud_relay_ip
+        if not cloud_ip:
+            LOGGER.warning("No cloud address to pass %s (SNI %s) through to", addr, sni)
+            raw.close()
+            return
+        try:
+            upstream = socket.create_connection((cloud_ip, 443), timeout=10)
+        except OSError as err:
+            LOGGER.warning("Could not pass %s (SNI %s) through to %s: %s", addr, sni, cloud_ip, err)
+            raw.close()
+            return
+        LOGGER.info("Passing %s (SNI %s) through to the Ryobi cloud at %s", addr, sni, cloud_ip)
+        raw.settimeout(None)
+        upstream.settimeout(None)
+
+        def pump(src: socket.socket, dst: socket.socket) -> None:
+            try:
+                while data := src.recv(16384):
+                    dst.sendall(data)
+            except OSError:
+                pass
+            finally:
+                for sock in (src, dst):
+                    try:
+                        sock.close()
+                    except OSError:
+                        pass
+
+        threading.Thread(target=pump, args=(upstream, raw), daemon=True).start()
+        pump(raw, upstream)
+
+
+def _peek_sni(raw: socket.socket) -> str:
+    """Return the SNI host name in the ClientHello without consuming it."""
+    try:
+        data = raw.recv(4096, socket.MSG_PEEK)
+        if len(data) < 5 or data[0] != 0x16:
+            return ""
+        need = 5 + int.from_bytes(data[3:5], "big")
+        for _ in range(20):
+            if len(data) >= need:
+                break
+            time.sleep(0.05)
+            data = raw.recv(need, socket.MSG_PEEK)
+        pos = 5 + 4 + 2 + 32  # record header, handshake header, version, random
+        pos += 1 + data[pos]  # session id
+        pos += 2 + int.from_bytes(data[pos:pos + 2], "big")  # cipher suites
+        pos += 1 + data[pos]  # compression methods
+        end = pos + 2 + int.from_bytes(data[pos:pos + 2], "big")
+        pos += 2
+        while pos + 4 <= min(end, len(data)):
+            ext_type = int.from_bytes(data[pos:pos + 2], "big")
+            ext_len = int.from_bytes(data[pos + 2:pos + 4], "big")
+            if ext_type == 0:  # server_name: list length, name type, name length, name
+                name_len = int.from_bytes(data[pos + 7:pos + 9], "big")
+                return data[pos + 9:pos + 9 + name_len].decode("ascii", "replace")
+            pos += 4 + ext_len
+    except (OSError, IndexError):
+        pass
+    return ""
 
 
 def _cloud_style_upgrade(data: bytes) -> bytes:

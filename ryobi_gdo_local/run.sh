@@ -215,11 +215,16 @@ fi
 # ---------------------------------------------------------------------------
 bashio::log.info "Starting Ryobi server on ports ${SERVER_PORT} (HTTP), 443 (HTTPS), and ${INGRESS_PORT} (Ingress)..."
 
+# The real cloud address, resolved past this add-on's own DNS. Phones and
+# browsers (they send SNI) are passed straight through to it on 443.
+TTI_CLOUD_IP="$(nslookup tti.tiwiconnect.com 1.1.1.1 2>/dev/null \
+    | awk '/^Address/ && $2 ~ /^[0-9.]+$/ { ip = $2 } END { print ip }')"
+export TTI_CLOUD_IP
+
 # cloud_relay: pass the opener's session through to the real cloud and log it
-# (debug level) to learn the protocol. Resolve past this add-on's own DNS.
+# (debug level) to learn the protocol.
 if bashio::config.true 'cloud_relay'; then
-    OPENER_CLOUD_RELAY_IP="$(nslookup tti.tiwiconnect.com 1.1.1.1 2>/dev/null \
-        | awk '/^Address/ && $2 ~ /^[0-9.]+$/ { ip = $2 } END { print ip }')"
+    OPENER_CLOUD_RELAY_IP="${TTI_CLOUD_IP}"
     export OPENER_CLOUD_RELAY_IP
     bashio::log.warning "cloud_relay is on: the opener is relayed to the Ryobi cloud (${OPENER_CLOUD_RELAY_IP:-not resolved}), not controlled locally"
 fi
