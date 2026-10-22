@@ -11,6 +11,8 @@
 - Support the physical opener's legacy TLS handshake and configured certificate chain.
 - Reject incomplete opener authentication headers and ordinary-client telemetry injection in takeover mode.
 - Reject disconnected or unsupported physical commands rather than reporting simulated success.
+- Refuse relay/takeover startup when the cloud IPv4 address is missing or nonpublic, instead of silently routing the opener locally.
+- Keep Wi-Fi SSID/IP values out of normal INFO logs and include the TLS bridge dependency in Python package metadata.
 
 ### Technical details and limits
 - Add bounded authorization buffering, cloud TLS verification, disconnect cleanup, and bundled-source parity coverage.

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import ipaddress
 import os
 import sys
 
@@ -87,7 +88,7 @@ def opener_mode(config: dict) -> str:
     mode = os.environ.get("OPENER_MODE", config.get("opener_mode", "auto"))
     if mode not in ("auto", "cloud", "takeover", "local"):
         raise ValueError("opener_mode must be auto, cloud, takeover or local")
-    if config.get("cloud_relay") or os.environ.get("OPENER_CLOUD_RELAY_IP"):
+    if config.get("cloud_relay") or "OPENER_CLOUD_RELAY_IP" in os.environ:
         return "cloud"
     return "local" if mode == "auto" else mode
 
@@ -123,6 +124,13 @@ def _load_config(config_path: str) -> dict:
 
     config["opener_mode"] = opener_mode(config)
     config["cloud_ip"] = os.environ.get("TTI_CLOUD_IP", config.get("cloud_ip", ""))
+    if config["opener_mode"] in ("cloud", "takeover"):
+        try:
+            address = ipaddress.IPv4Address(config["cloud_ip"])
+        except ipaddress.AddressValueError as err:
+            raise ValueError("Cloud mode requires a public IPv4 address") from err
+        if not address.is_global or address.is_multicast:
+            raise ValueError("Cloud mode requires a public IPv4 address")
     return config
 
 

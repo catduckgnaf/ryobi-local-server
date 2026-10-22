@@ -246,8 +246,8 @@ async def _handle_opener_message(
         if updates:
             await store.update_state(opener_id, updates)
         LOGGER.info(
-            "Opener %s Wi-Fi: ssid=%s rssi=%s ip=%s",
-            opener_id, params.get("ssid"), params.get("rssi"), params.get("ipAddr"),
+            "Opener %s Wi-Fi status received: rssi=%s",
+            opener_id, params.get("rssi"),
         )
     elif method == "srvSetMasterUnitInfo":
         LOGGER.info(

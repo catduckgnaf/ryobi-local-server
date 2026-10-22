@@ -228,6 +228,10 @@ export OPENER_MODE
 # cloud_relay: pass the opener's session through to the real cloud and log it
 # (debug level) to learn the protocol.
 if bashio::config.true 'cloud_relay'; then
+    if [ -z "${TTI_CLOUD_IP}" ]; then
+        bashio::log.fatal "Cloud relay requires a resolved public cloud IPv4 address; refusing local fallback."
+        exit 1
+    fi
     OPENER_CLOUD_RELAY_IP="${TTI_CLOUD_IP}"
     export OPENER_CLOUD_RELAY_IP
     bashio::log.warning "cloud_relay is on: the opener is relayed to the Ryobi cloud (${OPENER_CLOUD_RELAY_IP:-not resolved}), not controlled locally"
