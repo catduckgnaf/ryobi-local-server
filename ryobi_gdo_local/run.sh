@@ -221,6 +221,10 @@ TTI_CLOUD_IP="$(nslookup tti.tiwiconnect.com 1.1.1.1 2>/dev/null \
     | awk '/^Address/ && $2 ~ /^[0-9.]+$/ { ip = $2 } END { print ip }')"
 export TTI_CLOUD_IP
 
+# auto preserves the previous cloud_relay selection; takeover is opt-in.
+OPENER_MODE="$(bashio::config 'opener_mode' 'auto')"
+export OPENER_MODE
+
 # cloud_relay: pass the opener's session through to the real cloud and log it
 # (debug level) to learn the protocol.
 if bashio::config.true 'cloud_relay'; then
