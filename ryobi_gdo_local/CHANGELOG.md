@@ -1,3 +1,9 @@
+## 1.2.5
+
+- Fix: Prevent `opener_cert_pem` from writing literal `null` into certificate files when optional configuration is omitted.
+- Fix: Add automatic fallback to self-signed `server.crt` / `server.key` if custom opener certificates fail to load.
+- Fix: Ensure port 443 TLS listener stays active for physical GDO hardware connections.
+
 # Changelog
 
 ## 1.2.4

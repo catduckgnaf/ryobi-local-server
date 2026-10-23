@@ -199,15 +199,23 @@ fi
 # and opener_key_pem its key; real newlines or literal \n both work.
 SSL_CERT="${SSL_DIR}/server.crt"
 SSL_KEY="${SSL_DIR}/server.key"
-OPENER_CERT_PEM="$(bashio::config 'opener_cert_pem' '')"
-OPENER_KEY_PEM="$(bashio::config 'opener_key_pem' '')"
-if [ -n "${OPENER_CERT_PEM}" ] && [ -n "${OPENER_KEY_PEM}" ]; then
-    printf '%s\n' "${OPENER_CERT_PEM}" | sed 's/\\n/\n/g' > "${SSL_DIR}/opener.crt"
-    printf '%s\n' "${OPENER_KEY_PEM}" | sed 's/\\n/\n/g' > "${SSL_DIR}/opener.key"
-    chmod 600 "${SSL_DIR}/opener.key"
-    SSL_CERT="${SSL_DIR}/opener.crt"
-    SSL_KEY="${SSL_DIR}/opener.key"
-    bashio::log.info "Opener certificate: $(grep -c 'BEGIN CERTIFICATE' "${SSL_CERT}") in chain, $(openssl x509 -in "${SSL_CERT}" -noout -subject -issuer | tr '\n' ' ')"
+if bashio::config.has_value 'opener_cert_pem' && bashio::config.has_value 'opener_key_pem'; then
+    OPENER_CERT_PEM="$(bashio::config 'opener_cert_pem')"
+    OPENER_KEY_PEM="$(bashio::config 'opener_key_pem')"
+    if [ -n "${OPENER_CERT_PEM}" ] && [ "${OPENER_CERT_PEM}" != "null" ] && [ -n "${OPENER_KEY_PEM}" ] && [ "${OPENER_KEY_PEM}" != "null" ]; then
+        printf '%s\n' "${OPENER_CERT_PEM}" | sed 's/\\n/\n/g' > "${SSL_DIR}/opener.crt"
+        printf '%s\n' "${OPENER_KEY_PEM}" | sed 's/\\n/\n/g' > "${SSL_DIR}/opener.key"
+        chmod 600 "${SSL_DIR}/opener.key"
+        SSL_CERT="${SSL_DIR}/opener.crt"
+        SSL_KEY="${SSL_DIR}/opener.key"
+        bashio::log.info "Opener certificate: $(grep -c 'BEGIN CERTIFICATE' "${SSL_CERT}") in chain, $(openssl x509 -in "${SSL_CERT}" -noout -subject -issuer | tr '\n' ' ')"
+    fi
+fi
+
+if [ -f "${SSL_DIR}/opener.crt" ] && ! grep -q 'BEGIN CERTIFICATE' "${SSL_DIR}/opener.crt"; then
+    rm -f "${SSL_DIR}/opener.crt" "${SSL_DIR}/opener.key"
+    SSL_CERT="${SSL_DIR}/server.crt"
+    SSL_KEY="${SSL_DIR}/server.key"
 fi
 
 # ---------------------------------------------------------------------------

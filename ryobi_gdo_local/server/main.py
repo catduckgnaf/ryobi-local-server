@@ -224,7 +224,26 @@ async def _async_main(args: argparse.Namespace) -> None:
                 await site_https.start()
                 LOGGER.info("HTTPS/WSS Server running on %s:%d (TLS active)", args.host, args.ssl_port)
         except Exception as err:
-            LOGGER.error("Failed to start HTTPS listener on port %d: %s", args.ssl_port, err)
+            LOGGER.error("Failed to start HTTPS listener on port %d with %s: %s", args.ssl_port, args.ssl_cert, err)
+            fallback_cert = os.path.join(os.path.dirname(args.ssl_cert), "server.crt")
+            fallback_key = os.path.join(os.path.dirname(args.ssl_key), "server.key")
+            if os.path.exists(fallback_cert) and os.path.exists(fallback_key) and fallback_cert != args.ssl_cert:
+                LOGGER.info("Attempting fallback HTTPS listener with %s", fallback_cert)
+                try:
+                    if os.environ.get("TLS_ENGINE", "tlslite") == "tlslite":
+                        from .tls_bridge import OpenerTLSBridge
+                        OpenerTLSBridge(
+                            args.host, args.ssl_port, fallback_cert, fallback_key, args.port,
+                            cloud_relay_ip=(config["cloud_ip"] if config["opener_mode"] == "cloud" else ""),
+                        ).start()
+                        LOGGER.info("HTTPS/WSS Server running on %s:%d (tlslite-ng fallback bridge)", args.host, args.ssl_port)
+                    else:
+                        ssl_ctx = _server_ssl_context(fallback_cert, fallback_key)
+                        site_https = web.TCPSite(runner, host=args.host, port=args.ssl_port, ssl_context=ssl_ctx)
+                        await site_https.start()
+                        LOGGER.info("HTTPS/WSS Server running on %s:%d (TLS fallback active)", args.host, args.ssl_port)
+                except Exception as fb_err:
+                    LOGGER.error("Fallback HTTPS listener also failed: %s", fb_err)
 
     # 3. Ingress Site (HA sidebar dashboard on 8099)
     if args.ingress_port and args.ingress_port not in (args.port, args.ssl_port):
