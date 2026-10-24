@@ -6,7 +6,7 @@ Addresses [issue #65](https://github.com/catduckgnaf/ryobi_gdo/issues/65) — _"
 
 **Compatible hardware:** Ryobi GDO125, GDO201, and GD200 garage-door openers.
 
-## Experimental authenticated takeover (not hardware validated)
+## Authenticated takeover (confirmed working on catduck’s hardware)
 
 `opener_mode: takeover` relays registration to the real cloud, waits for explicit
 cloud authorization, and then retains the opener WebSocket for local commands.
@@ -27,15 +27,44 @@ Raw door value 1 was observed open; value 3 means moving with unknown direction.
 Other unobserved values remain unknown. Existing persisted values are cached,
 not proof of a live opener session.
 
-Offline tests cover lifecycle, authorization failures, mode selection, captured
-bytes and telemetry. They do not establish that a real opener stays connected
-after cloud handoff. Deployment and live validation are separate steps: verify
-home-WiFi phone fallback first, then light with returned telemetry; door operation
-requires someone present. Never use unverified HA state for auto-close safety.
+Takeover has been confirmed working on catduck’s hardware. The real cloud is
+required at reconnect, and only captured light on/off and door open commands are
+sent. Close, vacation and fan commands remain rejected. Telemetry, not command
+acknowledgement, updates state. Never use unverified HA state for auto-close
+safety.
 
 ---
 
 ## Quick Start
+
+1. Run the local server on your LAN and note its LAN IP.
+2. In UniFi, open **Settings > Routing > DNS** and add an A record: `tti.tiwiconnect.com` → the server's LAN IP. Ensure clients and the opener use this DNS server.
+3. Publish or allow TCP 443 from the opener to the server for its legacy TLS connection. Home Assistant uses HTTP on port 80; set the integration host to `http://tti.tiwiconnect.com` (including `http://`).
+4. Verify DNS resolves to the server IP before configuring Home Assistant.
+
+```mermaid
+flowchart LR
+  GDO[Ryobi opener] -- "DNS: tti.tiwiconnect.com?" --> DNS[dnsmasq / router DNS]
+  DNS -- "answers: local server IP" --> GDO
+  GDO -- "TLS 443 (legacy cipher, tlslite-ng)" --> SRV[ryobi-local-server]
+  HA[Home Assistant ryobi_gdo] -- "HTTP 80 + WebSocket\nhost: http://tti.tiwiconnect.com" --> SRV
+  Phone[Phone app / browser] -- "443 SNI passthrough" --> SRV -- "spliced untouched" --> Cloud[(real Ryobi cloud)]
+```
+
+The phone app's TLS connection is passed through by SNI, rather than terminated as the local Home Assistant HTTP connection is.
+
+### Troubleshooting
+
+| Symptom | Cause and action |
+|---|---|
+| `NO_SHARED_CIPHER` | The opener uses a legacy TLS cipher. Use the project's `tlslite-ng` listener; do not substitute a standard OpenSSL TLS listener. |
+| `Not a PEM private key file` | A missing optional certificate value may have been written as literal `null`. Upgrade to 1.2.5 or later and check the add-on's key configuration. |
+| Opener not connecting | Confirm `tti.tiwiconnect.com` resolves to the server IP and TCP 443 is published/allowed to the server. |
+| Home Assistant certificate errors | Set the integration host to `http://tti.tiwiconnect.com`; omitting `http://` makes it use HTTPS. |
+
+### UniFi DNS
+
+In UniFi, go to **Settings > Routing > DNS** and create an A record for `tti.tiwiconnect.com` pointing to the LAN IP of the machine running this server. Make sure the opener and Home Assistant clients use the UniFi DNS resolver.
 
 DNS is required. The door and Home Assistant look up `tti.tiwiconnect.com`. This project answers that name with your server. The Home Assistant add-on includes that DNS server (dnsmasq, the same job as one AdGuard rewrite). Docker starts the same DNS as a second container. Details are in [DNS](#dns).
 
@@ -78,12 +107,6 @@ curl -sD- http://tti.tiwiconnect.com/health | head
 In the Ryobi integration, set **Host** to `http://tti.tiwiconnect.com`.
 
 If `ryobi-dns` exits immediately, port 53 is already taken. Free it, or do not start `ryobi-dns` and add the one rewrite on the DNS server you already run. Do not run two.
-
-### Docker Troubleshooting & Mac Gotchas
-
-- **Browser opens public Ryobi site, but `curl` returns the local server:** macOS Safari and Chrome enable **iCloud Private Relay** and **Secure DNS (DNS-over-HTTPS)** by default. They bypass your router's local DNS rewrite and query public resolvers directly. Disable iCloud Private Relay ("Limit IP Address Tracking") for your Wi-Fi network, turn off "Use secure DNS" in Chrome, or add `tti.tiwiconnect.com` to `/etc/hosts`.
-- **Web UI says "No Devices":** The local server starts empty unless configured. Add your garage door's varName under `devices:` in `config/config.yaml`.
-- **Physical opener won't connect:** The opener hardware connects over **TLS Port 443**, while Home Assistant uses **HTTP Port 80**. Ensure your Docker Compose publishes both ports (`80:80` and `443:443`).
 
 ---
 
@@ -139,15 +162,6 @@ nslookup tti.tiwiconnect.com
 A private address (192.168..., 10..., 172.16...) means DNS is working. A public address means it is not. A VPN, Android Private DNS, or iCloud Private Relay ignores the router and keeps returning the public address. Turn those off while testing.
 
 Then set the integration Host to `http://tti.tiwiconnect.com`. Home Assistant looks the name up, which is the DNS, and connects to port 80. Leaving the host as `tti.tiwiconnect.com` with no `http://` uses HTTPS, and Home Assistant rejects the certificate the server generates. The lookup can be right and the integration still fails.
-
-### Running Without UniFi / No Custom Router Configs
-
-You do **not** need UniFi or router scripts to run locally:
-
-1. **Dedicated IoT Wi-Fi / Guest Network:** If your Wi-Fi router lets you set a custom DNS server for an IoT SSID or Guest network, set its DHCP DNS server to your Home Assistant IP. The add-on includes `dnsmasq`, which resolves `tti.tiwiconnect.com` locally and passes everything else through.
-2. **AdGuard Home or Pi-hole:** Add one DNS rewrite rule (`tti.tiwiconnect.com` -> `<Home Assistant IP>`). Survives all router updates.
-3. **Dedicated USB Wi-Fi Dongle on Home Assistant:** Install the Home Assistant *Access Point* add-on to broadcast a private Wi-Fi network directly from HA. Connect the opener to that SSID so it never touches your router.
-4. **Hardware Relay (ESPHome / Shelly):** Connect a Shelly Plus 1 or ESP32 to the wall button push terminals on the opener. Bypasses the Wi-Fi module and cloud entirely (see [`examples/esphome_ryobi.yaml`](examples/esphome_ryobi.yaml)).
 
 ### Already running AdGuard, Pi-hole, or UniFi
 

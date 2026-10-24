@@ -340,8 +340,15 @@ async def _handle_ws_message(
         )
 
     elif method == "gdoModuleCommand":
-        # Command from HA to control the device
+        # Commands are accepted only from an authenticated physical opener.
         device_id = params.get("topic", "")
+        opener_ws = store._device_sockets.get(device_id)
+        if opener_ws is None or opener_ws.closed:
+            await ws.send_str(json.dumps({
+                "jsonrpc": "2.0", "id": msg_id,
+                "error": {"code": -32600, "message": "Command requires authenticated physical opener"},
+            }))
+            return
         module_type = params.get("moduleType")
         module_msg: dict[str, Any] = params.get("moduleMsg", {})
 
