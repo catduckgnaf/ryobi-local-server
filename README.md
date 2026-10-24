@@ -79,6 +79,12 @@ In the Ryobi integration, set **Host** to `http://tti.tiwiconnect.com`.
 
 If `ryobi-dns` exits immediately, port 53 is already taken. Free it, or do not start `ryobi-dns` and add the one rewrite on the DNS server you already run. Do not run two.
 
+### Docker Troubleshooting & Mac Gotchas
+
+- **Browser opens public Ryobi site, but `curl` returns the local server:** macOS Safari and Chrome enable **iCloud Private Relay** and **Secure DNS (DNS-over-HTTPS)** by default. They bypass your router's local DNS rewrite and query public resolvers directly. Disable iCloud Private Relay ("Limit IP Address Tracking") for your Wi-Fi network, turn off "Use secure DNS" in Chrome, or add `tti.tiwiconnect.com` to `/etc/hosts`.
+- **Web UI says "No Devices":** The local server starts empty unless configured. Add your garage door's varName under `devices:` in `config/config.yaml`.
+- **Physical opener won't connect:** The opener hardware connects over **TLS Port 443**, while Home Assistant uses **HTTP Port 80**. Ensure your Docker Compose publishes both ports (`80:80` and `443:443`).
+
 ---
 
 ## How it Works
