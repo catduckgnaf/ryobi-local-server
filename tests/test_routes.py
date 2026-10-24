@@ -139,3 +139,15 @@ async def test_health(client):
     assert resp.status == 200
     data = await resp.json()
     assert data["status"] == "ok"
+
+
+async def test_gdo_command_fails_closed_without_physical_opener(client):
+    before = await (await client.get("/state")).json()
+    ws = await client.ws_connect("/api/wsrpc")
+    await ws.send_json({"jsonrpc":"2.0", "id":42, "method":"gdoModuleCommand", "params":{"topic":DEVICE_ID,"moduleType":5,"moduleMsg":{"doorCommand":1}}})
+    reply = await ws.receive_json()
+    assert reply["id"] == 42
+    assert reply["error"]["code"] == -32600
+    state = await (await client.get("/state")).json()
+    assert state == before
+    await ws.close()
