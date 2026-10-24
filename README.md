@@ -140,6 +140,15 @@ A private address (192.168..., 10..., 172.16...) means DNS is working. A public 
 
 Then set the integration Host to `http://tti.tiwiconnect.com`. Home Assistant looks the name up, which is the DNS, and connects to port 80. Leaving the host as `tti.tiwiconnect.com` with no `http://` uses HTTPS, and Home Assistant rejects the certificate the server generates. The lookup can be right and the integration still fails.
 
+### Running Without UniFi / No Custom Router Configs
+
+You do **not** need UniFi or router scripts to run locally:
+
+1. **Dedicated IoT Wi-Fi / Guest Network:** If your Wi-Fi router lets you set a custom DNS server for an IoT SSID or Guest network, set its DHCP DNS server to your Home Assistant IP. The add-on includes `dnsmasq`, which resolves `tti.tiwiconnect.com` locally and passes everything else through.
+2. **AdGuard Home or Pi-hole:** Add one DNS rewrite rule (`tti.tiwiconnect.com` -> `<Home Assistant IP>`). Survives all router updates.
+3. **Dedicated USB Wi-Fi Dongle on Home Assistant:** Install the Home Assistant *Access Point* add-on to broadcast a private Wi-Fi network directly from HA. Connect the opener to that SSID so it never touches your router.
+4. **Hardware Relay (ESPHome / Shelly):** Connect a Shelly Plus 1 or ESP32 to the wall button push terminals on the opener. Bypasses the Wi-Fi module and cloud entirely (see [`examples/esphome_ryobi.yaml`](examples/esphome_ryobi.yaml)).
+
 ### Already running AdGuard, Pi-hole, or UniFi
 
 Port 53 can only have one listener. If something else is already your DNS, turn the add-on's `dns_enabled` off (and do not start `ryobi-dns`) and add one rewrite there:
