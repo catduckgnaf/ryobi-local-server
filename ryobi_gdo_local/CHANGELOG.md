@@ -1,3 +1,10 @@
+## 1.2.6 (2026-11-01)
+
+- Fix: Local mode now authorizes the physical opener immediately after the WebSocket upgrade. The real cloud speaks first (`authorizedWebSocket` about 3 s after the 101, captured 2026-11-01 through cloud relay); the opener only sends `wskClientRegister`/`wskServerRegister` after that. The old server waited for `wskServerRegister`, so both sides waited and the opener dropped the session after about 20 s. Fixes the local half of #13.
+- Fix: Takeover no longer rejects the cloud's authorization when it arrives before the opener's registration frame (`cloud authorization preceded opener registration`, `takeover.py:116`). That ordering is the normal one. Fixes #13.
+- Fix: Commands fail closed and the stale socket is dropped when the opener's WebSocket has closed.
+- Tests: regression test for authorize-on-connect; 84 offline tests pass.
+
 ## 1.2.5
 
 - Fix: Prevent `opener_cert_pem` from writing literal `null` into certificate files when optional configuration is omitted.

@@ -151,3 +151,17 @@ async def test_gdo_command_fails_closed_without_physical_opener(client):
     state = await (await client.get("/state")).json()
     assert state == before
     await ws.close()
+
+
+async def test_local_opener_is_authorized_before_it_registers(client):
+    """The real cloud speaks first; the opener waits for it (captured 2026-11-01)."""
+    ws = await client.ws_connect("/api/wsrpc", headers={
+        "x-tc-varname": DEVICE_ID, "x-tc-transform": "tti-gdo-rpc"})
+    first = await ws.receive_json(timeout=2)
+    assert first["method"] == "authorizedWebSocket"
+    assert first["params"]["authorized"] is True
+    await ws.send_json({"jsonrpc": "2.0", "method": "wskServerRegister", "params": None})
+    await ws.send_json({"jsonrpc": "2.0", "method": "wskClientRegister", "params": None})
+    with pytest.raises(TimeoutError):
+        await ws.receive_json(timeout=0.3)  # no second authorization
+    await ws.close()

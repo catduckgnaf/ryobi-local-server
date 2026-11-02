@@ -183,6 +183,11 @@ def make_wsrpc_handler(store: StateStore, config: dict):
             )
             if store.get_device(opener_id):
                 store.register_device_ws(opener_id, ws)
+                # The cloud speaks first: it authorizes the socket about three
+                # seconds after the upgrade, and the opener registers only
+                # after that. Waiting for wskServerRegister deadlocks and the
+                # opener drops the session after ~20 seconds (#13).
+                await _authorize_opener(ws, opener_id)
             else:
                 LOGGER.warning("Opener %s is not a configured device_id", opener_id)
         else:
@@ -209,6 +214,16 @@ def make_wsrpc_handler(store: StateStore, config: dict):
     return handle_wsrpc
 
 
+async def _authorize_opener(ws: web.WebSocketResponse, opener_id: str) -> None:
+    """Send the unsolicited authorization the real cloud sends after upgrade."""
+    await ws.send_str(json.dumps({
+        "jsonrpc": "2.0",
+        "method": "authorizedWebSocket",
+        "params": {"authorized": True, "socketId": f"local_{opener_id}"},
+    }))
+    LOGGER.info("Opener %s authorized locally", opener_id)
+
+
 async def _handle_opener_message(
     ws: web.WebSocketResponse, raw: str, opener_id: str, store: StateStore
 ) -> None:
@@ -229,11 +244,7 @@ async def _handle_opener_message(
     method = msg.get("method", "")
     params = msg.get("params") or {}
     if method == "wskServerRegister":
-        await ws.send_str(json.dumps({
-            "jsonrpc": "2.0",
-            "method": "authorizedWebSocket",
-            "params": {"authorized": True, "socketId": f"local_{opener_id}"},
-        }))
+        # Already authorized on connect; the cloud never answers this again.
         LOGGER.info("Opener %s registered", opener_id)
     elif method == "srvSetModuleStatus":
         await store.handle_device_push(opener_id, params)

@@ -113,8 +113,10 @@ async def run_takeover(opener, cloud, device_id: str, store: StateStore, *, time
                     raise ValueError("cloud authorization rejected")
                 if not isinstance(params.get("socketId"), str) or not params["socketId"]:
                     raise ValueError("cloud authorization missing socket ID")
-                if not registered.is_set():
-                    raise ValueError("cloud authorization preceded opener registration")
+                # The cloud authorizes before the opener registers (captured
+                # 2026-11-01: authorizedWebSocket ~3 s after upgrade, then
+                # wskClientRegister/wskServerRegister). Requiring registration
+                # first deadlocked every takeover (#13).
                 await opener.send_str(message.data)
                 authenticated.set()
                 return
