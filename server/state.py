@@ -90,8 +90,12 @@ class StateStore:
                 if data[5] != 0xfe:
                     updates["door_state_raw"] = data[5]
                     updates["door_moving"] = data[5] == 3
-                    # Capture proves open=1 and moving=3, not direction or closed.
-                    updates["door_state"] = "1" if data[5] == 1 else "unknown"
+                    # Same enum as the cloud doorState: 0 closed, 1 open,
+                    # 2 closing, 3 opening, 4 fault. Confirmed live 2026-11-01 ET:
+                    # 22:48 opening 3 -> open 1 (position 1 -> 94), 22:53 closing
+                    # 2 -> closed 0 (position 94 -> 0).
+                    updates["door_state"] = (
+                        str(data[5]) if data[5] in (0, 1, 2, 3, 4) else "unknown")
                 if data[9] != 0xfe:
                     updates["door_position"] = data[9]
             elif raw_params.get("moduleType") == 6 and raw_params.get("portId") == 8 and len(data) == 1:

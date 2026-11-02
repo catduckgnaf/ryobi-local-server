@@ -1,3 +1,9 @@
+## 1.2.8 (2026-11-01)
+
+- Fix: Door state from opener telemetry now maps closed (0) and closing (2) as well as open (1) and opening (3). Before, any value except open was reported as unknown, so Home Assistant kept showing **open** after the door closed. Confirmed against live telemetry on 2026-11-01 ET: at 22:48 the door went opening to open (position 1 to 94), and at 22:53 it went closing to closed (94 to 0).
+- Door commands are unchanged. Only the captured OPEN is sent; CLOSE is still rejected.
+- Tests: 87 offline tests pass.
+
 ## 1.2.7 (2026-11-01)
 
 - Fix: An ordinary Home Assistant or app connection that sends `srvWebSocketAuth` with a `varName` no longer claims the physical opener's command socket. Commands with no physical opener now return a JSON-RPC error and change no state (#10).

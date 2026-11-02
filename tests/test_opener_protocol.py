@@ -59,8 +59,10 @@ async def test_captured_light_status_reaches_ha(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("index,value,expected", [
     (5, 1, {"door_state": "1", "door_state_raw": 1, "door_moving": False}),
-    (5, 3, {"door_state": "unknown", "door_state_raw": 3, "door_moving": True}),
-    (5, 0, {"door_state": "unknown", "door_state_raw": 0, "door_moving": False}),
+    (5, 3, {"door_state": "3", "door_state_raw": 3, "door_moving": True}),
+    (5, 0, {"door_state": "0", "door_state_raw": 0, "door_moving": False}),
+    (5, 2, {"door_state": "2", "door_state_raw": 2, "door_moving": False}),
+    (5, 9, {"door_state": "unknown", "door_state_raw": 9, "door_moving": False}),
     (9, 94, {"door_position": 94}),
 ])
 async def test_sparse_door_status_never_infers_unknown_states(index, value, expected, tmp_path, monkeypatch):
