@@ -269,3 +269,8 @@ A: Yes — add multiple entries under `devices:` in config.yaml.
 ## License
 
 MIT
+
+
+## Opener certificate and feature map
+
+How to get the GlobalSign-chained certificate, including the Cloudflare API token, and the table of which integration entities work in `local` mode are in [`ryobi_gdo_local/DOCS.md`](ryobi_gdo_local/DOCS.md#opener-certificate-required-for-local-mode).
