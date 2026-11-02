@@ -1,3 +1,11 @@
+## 1.2.7 (2026-11-01)
+
+- Fix: An ordinary Home Assistant or app connection that sends `srvWebSocketAuth` with a `varName` no longer claims the physical opener's command socket. Commands with no physical opener now return a JSON-RPC error and change no state (#10).
+- Fix: A command the server cannot deliver to the opener returns a JSON-RPC error instead of an OK acknowledgement (#10).
+- Docs: README and DOCS describe the opener modes, the verified local-only setup, and the certificate requirement.
+- Verified live 2026-11-01 on a GD200 (fw 1.0.7) in `opener_mode: local` with `cloud_relay: false`: local authorization on connect, and a light on/off round trip confirmed by opener telemetry.
+- Tests: 85 offline tests pass.
+
 ## 1.2.6 (2026-11-01)
 
 - Fix: Local mode now authorizes the physical opener immediately after the WebSocket upgrade. The real cloud speaks first (`authorizedWebSocket` about 3 s after the 101, captured 2026-11-01 through cloud relay); the opener only sends `wskClientRegister`/`wskServerRegister` after that. The old server waited for `wskServerRegister`, so both sides waited and the opener dropped the session after about 20 s. Fixes the local half of #13.

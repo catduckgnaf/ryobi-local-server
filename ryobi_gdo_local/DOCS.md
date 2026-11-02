@@ -27,6 +27,9 @@ Install **Ryobi GDO Local Server**.
 | `dns_enabled` | **On.** This is the built-in DNS. |
 | `server_port` | `80` |
 | `fan_ports` | Leave empty for one fan. For a fan on port 2 and port 5, set `2,5`. The integration then shows Fan 2 and Fan 5. |
+| `opener_mode` | `local`. This controls the opener with no Ryobi cloud. Verified 2026-11-01. |
+| `cloud_relay` | **Off.** On relays the opener to Ryobi for protocol capture, and Home Assistant commands then do nothing. |
+| `opener_cert_pem` / `opener_key_pem` | The opener's trusted certificate chain and key for `tti.tiwiconnect.com`. Without them the opener rejects TLS and never connects. Back them up: they are lost if the add-on is reinstalled. |
 
 Start the add-on. In the **Log** tab you want these lines:
 
@@ -119,6 +122,8 @@ If nslookup is correct and the log never shows that GET, the integration Host is
 ---
 
 ## What you should see when a command is sent
+
+In `local` mode a healthy opener logs `Opener <id> connected`, then `authorized locally`, then `registered`. After a light command, a `State change ... light_state` line follows the opener's own telemetry. That telemetry is the proof the hardware acted.
 
 The add-on log shows the WebSocket command and the dashboard changes. That means Home Assistant reached the add-on. It does not, by itself, prove the physical door moved. If the opener never connects (nothing in the log from the opener's IP), it is still talking to Ryobi. The usual causes are: the opener got a different DNS server, Private DNS, or it refused the add-on's certificate. The log is the check. A public address from `nslookup` on a phone next to the opener means the opener will miss it too.
 

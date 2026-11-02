@@ -165,3 +165,20 @@ async def test_local_opener_is_authorized_before_it_registers(client):
     with pytest.raises(TimeoutError):
         await ws.receive_json(timeout=0.3)  # no second authorization
     await ws.close()
+
+
+async def test_client_auth_never_claims_opener_socket(client):
+    """#10: an HA client authenticating with varName is not the opener."""
+    before = await (await client.get("/state")).json()
+    ws = await client.ws_connect("/api/wsrpc")
+    await ws.send_json({"jsonrpc": "2.0", "id": 1, "method": "srvWebSocketAuth",
+                        "params": {"varName": DEVICE_ID, "apiKey": "x"}})
+    await ws.receive_json(timeout=2)
+    await ws.receive_json(timeout=2)
+    await ws.send_json({"jsonrpc": "2.0", "id": 7, "method": "gdoModuleCommand",
+                        "params": {"topic": DEVICE_ID, "moduleType": 5,
+                                   "moduleMsg": {"lightState": 1}}})
+    reply = await ws.receive_json(timeout=2)
+    assert reply["id"] == 7 and reply["error"]["code"] == -32600
+    assert await (await client.get("/state")).json() == before
+    await ws.close()

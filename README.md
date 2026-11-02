@@ -6,32 +6,30 @@ Addresses [issue #65](https://github.com/catduckgnaf/ryobi_gdo/issues/65) — _"
 
 **Compatible hardware:** Ryobi GDO125, GDO201, and GD200 garage-door openers.
 
-## Authenticated takeover (confirmed working on catduck’s hardware)
+## Opener modes (verified 2026-11-01, add-on 1.2.7, GD200 fw 1.0.7)
 
-`opener_mode: takeover` relays registration to the real cloud, waits for explicit
-cloud authorization, and then retains the opener WebSocket for local commands.
-It still requires the cloud at every reconnect. It is **not cloud-independent**.
-The existing `cloud_relay: true` / `OPENER_CLOUD_RELAY_IP` capture override wins;
-leave it enabled to preserve the working cloud path. `auto` preserves legacy
-behavior, `cloud` explicitly selects relay, and `local` selects the old emulator.
+| Mode | Cloud needed | Status |
+|---|---|---|
+| `local` (recommended) | **No** | Verified on catduck's hardware 2026-11-01: opener authorized locally on connect, light on/off round trip confirmed by the opener's own `srvSetModuleStatus` telemetry, HA shows `Local Server`. |
+| `takeover` | Yes, at every reconnect | Cloud-first authorization ordering fixed in 1.2.6 (#13). Not re-tested live after the fix. |
+| `cloud` / `cloud_relay: true` | Yes, always | Capture/diagnostic only. The opener talks to Ryobi; HA commands do not reach it. |
+| `auto` | Depends | `cloud` when `cloud_relay` is on, otherwise `local`. |
 
-Takeover requires a trusted opener certificate and an externally resolved public
-IPv4 address in `TTI_CLOUD_IP` (or `cloud_ip` in standalone YAML). TLS to the real
-cloud verifies `tti.tiwiconnect.com`; it never follows the local DNS rewrite.
-The add-on already resolves this public address for its SNI passthrough.
+**How local mode works.** The real cloud speaks first: it sends
+`authorizedWebSocket` about 3 s after the WebSocket upgrade, and only then does
+the opener send `wskClientRegister` / `wskServerRegister` and start streaming
+telemetry. Before 1.2.6 the server waited for `wskServerRegister`, both sides
+waited, and the opener dropped the session after about 20 s.
+
+Requirements: the opener's trusted certificate and key in `opener_cert_pem` /
+`opener_key_pem` (a self-signed fallback is rejected by the opener), DNS for
+`tti.tiwiconnect.com` pointing at this server, and TCP 443 reachable.
 
 Only captured light on/off and door **open** commands are sent on the physical
 socket. Close, vacation and fan commands are rejected rather than guessed.
-Telemetry updates state; sending a command does not echo a successful operation.
-Raw door value 1 was observed open; value 3 means moving with unknown direction.
-Other unobserved values remain unknown. Existing persisted values are cached,
-not proof of a live opener session.
-
-Takeover has been confirmed working on catduck’s hardware. The real cloud is
-required at reconnect, and only captured light on/off and door open commands are
-sent. Close, vacation and fan commands remain rejected. Telemetry, not command
-acknowledgement, updates state. Never use unverified HA state for auto-close
-safety.
+Telemetry, not command acknowledgement, updates state. Commands with no
+physical opener socket, or that cannot be delivered, return a JSON-RPC error
+and change nothing (#10). Never use unverified HA state for auto-close safety.
 
 ---
 

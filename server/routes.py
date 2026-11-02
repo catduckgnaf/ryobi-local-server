@@ -307,9 +307,9 @@ async def _handle_ws_message(
             })
         )
 
-        if (authorized and var_name and store.get_device(var_name)
-                and config.get("opener_mode") != "takeover"):
-            store.register_device_ws(var_name, ws)
+        # srvWebSocketAuth comes from apps and Home Assistant, never from the
+        # physical opener (it authenticates with x-tc-* upgrade headers), so
+        # it must not claim the opener's command socket (#10).
 
         if not authorized:
             LOGGER.warning("WS auth rejected: invalid API key for %s", var_name)
@@ -390,9 +390,15 @@ async def _handle_ws_message(
                 attr = "doorState"
                 value = "1" if str(value) in ("1", "true", "open") else "0"
 
-            await store.apply_command(
+            delivered = await store.apply_command(
                 device_id, module_name, attr, value, port_id=params.get("portId")
             )
+            if not delivered:
+                await ws.send_str(json.dumps({
+                    "jsonrpc": "2.0", "id": msg_id,
+                    "error": {"code": -32603, "message": f"Command {attr} not delivered to opener"},
+                }))
+                return
 
             # Fire outgoing command webhook if configured
             webhook_url = config.get("command_webhook_url", "")
