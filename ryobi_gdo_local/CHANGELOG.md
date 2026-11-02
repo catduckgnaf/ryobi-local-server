@@ -1,3 +1,8 @@
+## 1.2.9 (2026-11-01)
+
+- Door CLOSE is now sent to the opener as `////AP8=`. This frame is inferred, not captured. The captured OPEN frame is `ff ff ff 01 ff`, and light commands use 01 for on and 00 for off, so CLOSE sets byte 3 to 0. It matches `doorCommand 0 = close`, which the `ryobi_gdo` HACS integration and the archived knowledge base (2026-08-29) already document.
+- README documents the binary frames and the door state enum.
+
 ## 1.2.8 (2026-11-01)
 
 - Fix: Door state from opener telemetry now maps closed (0) and closing (2) as well as open (1) and opening (3). Before, any value except open was reported as unknown, so Home Assistant kept showing **open** after the door closed. Confirmed against live telemetry on 2026-11-01 ET: at 22:48 the door went opening to open (position 1 to 94), and at 22:53 it went closing to closed (94 to 0).

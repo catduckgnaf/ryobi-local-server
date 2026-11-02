@@ -335,6 +335,11 @@ class StateStore:
             elif module == "garageDoor" and attr in ("doorState", "doorCommand"):
                 if str(value).lower() in ("1", "true", "open"):
                     encoded = "////Af8="
+                elif str(value).lower() in ("0", "false", "close"):
+                    # Inferred, not captured: OPEN is ff ff ff 01 ff (byte 3 = 1),
+                    # and light uses 01 on / 00 off in byte 1, so CLOSE is byte 3 = 0.
+                    # Matches the JSON doorCommand 0 = close used by ryobi_gdo.
+                    encoded = "////AP8="
             if encoded is None:
                 LOGGER.warning("Uncaptured physical command rejected: %s.%s", module, attr)
                 return False

@@ -124,7 +124,9 @@ async def test_wifi_push_updates_state(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("module,attr,value,encoded", [
     ("garageDoor", "doorState", "1", "////Af8="),
-    ("garageDoor", "doorState", "0", None),
+    ("garageDoor", "doorState", "0", "////AP8="),
+    ("garageDoor", "doorCommand", 0, "////AP8="),
+    ("garageDoor", "doorCommand", 1, "////Af8="),
     ("garageDoor", "vacationMode", True, None),
     ("fan", "speed", 3, None),
 ])
