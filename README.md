@@ -271,6 +271,31 @@ A: Yes — add multiple entries under `devices:` in config.yaml.
 MIT
 
 
-## Opener certificate and feature map
+## Opener certificate (Cloudflare token)
 
-How to get the GlobalSign-chained certificate, including the Cloudflare API token, and the table of which integration entities work in `local` mode are in [`ryobi_gdo_local/DOCS.md`](ryobi_gdo_local/DOCS.md#opener-certificate-required-for-local-mode).
+`local` mode needs an opener certificate that chains to **GlobalSign Root CA**. The opener ignores the hostname but rejects self-signed certificates. Google Trust Services (GTS) certificates chain to GlobalSign; this was verified on 2026-10-21. You prove ownership of a domain on Cloudflare through a DNS TXT record. The name does not have to point anywhere.
+
+**Cloudflare API token**
+1. https://dash.cloudflare.com → profile icon → **My Profile** → **API Tokens** → **Create Token**.
+2. Template **Edit zone DNS** → **Use template**.
+3. Permissions: `Zone / DNS / Edit`, plus a row `Zone / Zone / Read`.
+4. Zone Resources: `Include / Specific zone / <your domain>`.
+5. **Continue to summary** → **Create Token**. Copy it now, because Cloudflare shows it only once. Keep it in a password manager. It never goes into the add-on options.
+
+**GTS account key (once):** in Google Cloud, enable the *Public Certificate Authority API*, then run `gcloud publicca external-account-keys create` in Cloud Shell. This gives a `keyId` and a `b64MacKey`, usable for one registration only.
+
+**Issue with [lego](https://go-acme.github.io/lego/):**
+
+```bash
+export CF_DNS_API_TOKEN=<cloudflare token>
+lego --server https://dv.acme-v02.api.pki.goog/directory \
+  --eab --kid <keyId> --hmac <b64MacKey> \
+  --email you@example.com --accept-tos \
+  --dns cloudflare --dns.resolvers 1.1.1.1:53 \
+  --key-type rsa2048 --preferred-chain "GlobalSign Root CA" \
+  --domains ryobi-gdo.example.com run
+```
+
+Paste the full `.lego/certificates/<domain>.crt` into `opener_cert_pem` and the `.key` into `opener_key_pem`, then restart the add-on. Certificates last 90 days. To renew, run the same command with `renew` instead of `run`; the EAB flags are no longer needed. Keep a copy of both PEMs outside Home Assistant.
+
+Full walkthrough, and the table of what works in `local` mode: [`ryobi_gdo_local/DOCS.md`](ryobi_gdo_local/DOCS.md#opener-certificate-required-for-local-mode). Remaining protocol mapping: [#14](https://github.com/catduckgnaf/ryobi-local-server/issues/14).
