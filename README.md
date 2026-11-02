@@ -28,7 +28,7 @@ Requirements: the opener's trusted certificate and key in `opener_cert_pem` /
 Light on/off and door open/close are sent on the physical socket as a 5 byte
 `gdoModuleCommand` (`msgType 16, moduleType 5, portId 7`): light `/wH///8=` on,
 `/wD///8=` off; door `////Af8=` open (captured), `////AP8=` close (inferred from
-the open frame and the light 01/00 pattern; first used 2026-11-01). Vacation and
+the open frame and the light 01/00 pattern; verified live 2026-11-01 23:09 ET). Vacation and
 fan commands are rejected rather than guessed. Door telemetry byte 5 uses the
 cloud `doorState` enum (0 closed, 1 open, 2 closing, 3 opening, 4 fault).
 Telemetry, not command acknowledgement, updates state. Commands with no

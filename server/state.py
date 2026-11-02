@@ -336,7 +336,8 @@ class StateStore:
                 if str(value).lower() in ("1", "true", "open"):
                     encoded = "////Af8="
                 elif str(value).lower() in ("0", "false", "close"):
-                    # Inferred, not captured: OPEN is ff ff ff 01 ff (byte 3 = 1),
+                    # Inferred from OPEN ff ff ff 01 ff (byte 3 = 1), verified live
+                    # 2026-11-01 23:09 ET: telemetry open 1 -> closing 2 -> closed 0.
                     # and light uses 01 on / 00 off in byte 1, so CLOSE is byte 3 = 0.
                     # Matches the JSON doorCommand 0 = close used by ryobi_gdo.
                     encoded = "////AP8="
