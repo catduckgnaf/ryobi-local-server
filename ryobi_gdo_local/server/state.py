@@ -317,6 +317,10 @@ class StateStore:
             return False
 
         device_ws = self._device_sockets.get(device_id)
+        if device_ws is None or device_ws.closed:
+            if device_ws is not None:
+                self.unregister_device_ws(device_ws)
+            return False
         if device_ws and not device_ws.closed:
             encoded = None
             if attr == "lightState" and module in ("garageLight", "garageDoor"):
