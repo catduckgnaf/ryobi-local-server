@@ -188,14 +188,14 @@ Verified 2026-11-01 on a GD200 (firmware 1.0.7) with no Ryobi cloud. "Telemetry"
 |---|---|---|---|
 | Cover (door) | 5 / 7 | Yes: closed, open, closing, opening, fault, position | Open and close, verified live |
 | Light switch | 5 / 7 | Yes | On and off, verified live |
-| Battery sensor | 6 / 8 | Yes (percent) | n/a |
-| Wi-Fi signal sensor | `wifiClientStatusSet` | Yes | n/a |
+| Battery sensor | 6 / 8 | Received, but the value is unverified (always 100); see [#15](https://github.com/catduckgnaf/ryobi-local-server/issues/15) | n/a |
+| Wi-Fi signal sensor | `wifiClientStatusSet` | Yes, but only seen at connect, so it may be stale; see [#16](https://github.com/catduckgnaf/ryobi-local-server/issues/16) | n/a |
 | Server connection sensors | add-on link | Yes | n/a |
 | Park assist (binary sensor and switch) | 1 / 3 | Yes (on/off) | Rejected, not captured |
 | Bluetooth speaker | 2 / 2 | Opener sends it, not decoded | Rejected |
 | Inflator | 4 / 0 | Opener sends it, not decoded | Rejected |
 | Fan, fan speed | not fitted on the test opener | No | Rejected |
-| Camera | possibly 7 / 9 | No | No |
+| Camera | possibly 7 / 9 | No (also broken on cloud); see [#17](https://github.com/catduckgnaf/ryobi-local-server/issues/17) | No |
 | Motion, safety beam, vacation mode, microphone | unknown | No | Rejected |
 
 Rejected commands return an error and change nothing. They are not guessed. Mapping the rest is tracked in the GitHub issues.
